@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Create job · Ticket PR Agent{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">GitHub ticket → investigated fix → reviewed PR</p>
+  <h1>Create a guarded coding job</h1>
+  <p>The application stops when evidence, validation, confidence, or review gates fail. It never merges automatically.</p>
+</section>
+
+{% if form_error %}<div class="alert error">{{ form_error }}</div>{% endif %}
+
+<form method="post" action="{{ url_for('create_job') }}" class="panel form-grid">
+  <label class="span-2">GitHub ticket URL
+    <input name="issue_url" type="url" required placeholder="https://github.com/owner/repo/issues/123" value="{{ form.issue_url if form else '' }}">
+  </label>
+  <label>Base branch
+    <input name="base_branch" required value="{{ form.base_branch if form else 'develop' }}">
+  </label>
+  <label>Branch prefix
+    <input name="branch_prefix" required value="{{ form.branch_prefix if form else 'bug-fix' }}">
+  </label>
+  <label class="span-2">Coding agent command
+    <input name="agent_command" required value="{{ form.agent_command if form else defaults.agent_command }}">
+    <small>The full prompt is supplied over stdin. The command runs inside the cloned repository.</small>
+  </label>
+  <label class="span-2">Review agent command
+    <input name="review_command" required value="{{ form.review_command if form else defaults.review_command }}">
+  </label>
+  <label class="span-2">Extra validation commands, one per line
+    <textarea name="validation_commands" rows="5" placeholder="bun test&#10;bun run lint">{{ form.validation_commands if form else '' }}</textarea>
+    <small>Commands are parsed without a shell. Pipes, redirects, and chained commands are intentionally unsupported.</small>
+  </label>
+  <label class="check span-2">
+    <input type="checkbox" name="close_issue_on_merge" {% if (form and form.close_issue_on_merge) or (not form and defaults.close_issue_on_merge) %}checked{% endif %}>
+    Use a closing keyword when the selected base is the repository default branch
+  </label>
+  <div class="span-2 actions">
+    <button type="submit">Investigate and prepare PR</button>
+  </div>
+</form>
+
+<section class="section-head"><h2>Recent jobs</h2></section>
+<div class="panel table-wrap">
+  <table>
+    <thead><tr><th>Job</th><th>Ticket</th><th>Base</th><th>Status</th><th>Updated</th></tr></thead>
+    <tbody>
+    {% for job in jobs %}
+      <tr>
+        <td><a href="{{ url_for('job_detail', job_id=job.id) }}">{{ job.id }}</a></td>
+        <td class="truncate">{{ job.issue_url }}</td>
+        <td><code>{{ job.base_branch }}</code></td>
+        <td><span class="status {{ job.status }}">{{ job.status }}</span></td>
+        <td>{{ job.updated_at[:19].replace('T', ' ') }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No jobs yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

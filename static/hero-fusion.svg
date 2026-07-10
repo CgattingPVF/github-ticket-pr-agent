@@ -1,0 +1,335 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200"
+     height="560"
+     viewBox="0 0 1200 560"
+     role="img"
+     aria-labelledby="title desc">
+  <title id="title">GitHub, AI and automation fusion logo</title>
+  <desc id="desc">
+    A glowing brain merges code collaboration on the left with artificial intelligence
+    circuitry and automation on the right, resting on a layered digital platform.
+  </desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07172E"/>
+      <stop offset="0.55" stop-color="#0A2144"/>
+      <stop offset="1" stop-color="#07152A"/>
+    </linearGradient>
+
+    <radialGradient id="halo" cx="50%" cy="48%" r="56%">
+      <stop offset="0" stop-color="#244F9D" stop-opacity=".42"/>
+      <stop offset=".55" stop-color="#123467" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#06162C" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="platformTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6A5CFF"/>
+      <stop offset=".5" stop-color="#3D56F1"/>
+      <stop offset="1" stop-color="#2CD6E8"/>
+    </linearGradient>
+
+    <linearGradient id="platformSide" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3D2EC4"/>
+      <stop offset="1" stop-color="#151A62"/>
+    </linearGradient>
+
+    <linearGradient id="brainFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#355892"/>
+      <stop offset=".55" stop-color="#1F3A6C"/>
+      <stop offset="1" stop-color="#112B55"/>
+    </linearGradient>
+
+    <linearGradient id="brainStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#B9D5FF"/>
+      <stop offset=".55" stop-color="#89B4FF"/>
+      <stop offset="1" stop-color="#41F1D3"/>
+    </linearGradient>
+
+    <linearGradient id="fusion" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6EA7FF"/>
+      <stop offset=".45" stop-color="#8C78FF"/>
+      <stop offset=".58" stop-color="#43E9D2"/>
+      <stop offset="1" stop-color="#2EF3C5"/>
+    </linearGradient>
+
+    <linearGradient id="aiCore" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8EAFFF"/>
+      <stop offset=".48" stop-color="#7B67FF"/>
+      <stop offset="1" stop-color="#27E3C2"/>
+    </linearGradient>
+
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="nodeGlow" x="-120%" y="-120%" width="340%" height="340%">
+      <feGaussianBlur stdDeviation="4.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="200%">
+      <feDropShadow dx="0" dy="20" stdDeviation="18" flood-color="#000B1F" flood-opacity=".75"/>
+    </filter>
+
+    <clipPath id="leftBrain">
+      <rect x="332" y="118" width="270" height="260"/>
+    </clipPath>
+
+    <clipPath id="rightBrain">
+      <rect x="598" y="118" width="270" height="260"/>
+    </clipPath>
+
+    <path id="brainShape" d="
+      M600 132
+      C567 94 516 98 489 125
+      C452 111 411 130 401 166
+      C364 175 344 210 356 243
+      C328 267 334 309 369 326
+      C374 365 410 386 446 374
+      C472 405 524 408 550 378
+      C570 391 586 393 600 387
+      C614 393 630 391 650 378
+      C676 408 728 405 754 374
+      C790 386 826 365 831 326
+      C866 309 872 267 844 243
+      C856 210 836 175 799 166
+      C789 130 748 111 711 125
+      C684 98 633 94 600 132
+      Z"/>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="560" rx="34" fill="url(#bg)"/>
+  <rect width="1200" height="560" rx="34" fill="url(#halo)"/>
+
+  <!-- Fine technical grid -->
+  <g opacity=".13" stroke="#73A7FF" stroke-width="1">
+    <path d="M74 112H1126M74 448H1126"/>
+    <path d="M165 66V494M1035 66V494"/>
+    <circle cx="600" cy="280" r="230" fill="none" stroke-dasharray="6 16"/>
+    <circle cx="600" cy="280" r="184" fill="none"/>
+  </g>
+
+  <!-- Orbital automation tracks -->
+  <g fill="none" stroke-linecap="round">
+    <ellipse cx="600" cy="278" rx="465" ry="201"
+             stroke="#2F6FCE" stroke-width="2.2" opacity=".42"
+             stroke-dasharray="12 22"/>
+    <ellipse cx="600" cy="278" rx="390" ry="151"
+             stroke="#4E8BE8" stroke-width="2" opacity=".34"/>
+    <path d="M154 278H300" stroke="#52B9FF" stroke-width="2" opacity=".62"/>
+    <path d="M900 278H1046" stroke="#52B9FF" stroke-width="2" opacity=".62"/>
+  </g>
+
+  <!-- Left network / Git collaboration -->
+  <g fill="none" stroke="#34C9E9" stroke-width="2.2" stroke-linecap="round" opacity=".75">
+    <path d="M112 86H214L250 116H306"/>
+    <path d="M68 155H190L235 193H314"/>
+    <path d="M98 278H300"/>
+    <path d="M115 392H218L258 356H320"/>
+    <path d="M164 86V120"/>
+  </g>
+
+  <!-- Right automation / circuit network -->
+  <g fill="none" stroke="#34C9E9" stroke-width="2.2" stroke-linecap="round" opacity=".75">
+    <path d="M1088 86H987L952 116H894"/>
+    <path d="M1132 155H1010L965 193H886"/>
+    <path d="M900 278H1102"/>
+    <path d="M1085 392H982L942 356H880"/>
+    <path d="M1036 86V120"/>
+  </g>
+
+  <!-- Outer glowing nodes -->
+  <g fill="#78FFE6" stroke="#C9FFF5" stroke-width="2" filter="url(#nodeGlow)">
+    <circle cx="112" cy="86" r="6"/>
+    <circle cx="68" cy="155" r="6"/>
+    <circle cx="98" cy="278" r="6"/>
+    <circle cx="115" cy="392" r="6"/>
+    <circle cx="1088" cy="86" r="6"/>
+    <circle cx="1132" cy="155" r="6"/>
+    <circle cx="1102" cy="278" r="6"/>
+    <circle cx="1085" cy="392" r="6"/>
+  </g>
+
+  <!-- Layered automation platform -->
+  <g filter="url(#shadow)">
+    <path d="M347 360L600 228L853 360L600 492Z"
+          fill="#0C183D" stroke="#3F62E8" stroke-width="4"/>
+    <path d="M347 360L600 492L853 360V394L600 526L347 394Z"
+          fill="url(#platformSide)" stroke="#4F5FF1" stroke-width="3"/>
+    <path d="M367 342L600 220L833 342L600 464Z"
+          fill="url(#platformTop)" stroke="#9FB8FF" stroke-width="3"/>
+    <path d="M393 341L600 234L807 341L600 449Z"
+          fill="#101F4C" stroke="#58BCEB" stroke-opacity=".65" stroke-width="2"/>
+    <path d="M428 341L600 252L772 341L600 430Z"
+          fill="#0A1738" stroke="#566FF1" stroke-opacity=".72" stroke-width="2"/>
+  </g>
+
+  <!-- Brain body -->
+  <g filter="url(#softGlow)">
+    <use href="#brainShape" fill="url(#brainFill)" stroke="url(#brainStroke)" stroke-width="6"/>
+  </g>
+
+  <!-- Left brain folds -->
+  <g clip-path="url(#leftBrain)"
+     fill="none"
+     stroke="#AFCBFF"
+     stroke-width="5"
+     stroke-linecap="round"
+     opacity=".88">
+    <path d="M485 130C448 147 449 180 467 195C434 199 416 225 424 250"/>
+    <path d="M401 171C421 167 437 178 442 192"/>
+    <path d="M357 243C379 232 405 238 418 254C392 269 389 300 406 317"/>
+    <path d="M372 326C397 333 416 321 426 306"/>
+    <path d="M446 374C437 345 449 325 470 315"/>
+    <path d="M489 125C512 134 525 152 523 174C546 170 568 180 578 198"/>
+    <path d="M463 223C489 214 507 226 513 245C529 235 554 240 566 256"/>
+    <path d="M471 315C493 325 519 320 532 301"/>
+    <path d="M538 358C555 341 570 336 592 341"/>
+  </g>
+
+  <!-- Right brain circuitry -->
+  <g clip-path="url(#rightBrain)"
+     fill="none"
+     stroke="#3FF0D1"
+     stroke-width="4"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+    <path d="M623 151V184H658V211"/>
+    <path d="M670 133V164H706V196H738"/>
+    <path d="M730 138V174H768"/>
+    <path d="M803 171H772V211H742V244"/>
+    <path d="M840 243H803V270H766"/>
+    <path d="M832 326H793V302H756"/>
+    <path d="M790 362H752V334H715"/>
+    <path d="M754 374H714V350H681"/>
+    <path d="M646 370V337H675V305"/>
+    <path d="M615 256H649V232H681"/>
+    <path d="M630 285H676V270H718"/>
+  </g>
+
+  <!-- Circuit nodes inside brain -->
+  <g fill="#77FFE4" stroke="#D3FFF7" stroke-width="2" filter="url(#nodeGlow)">
+    <circle cx="623" cy="151" r="5"/>
+    <circle cx="658" cy="211" r="5"/>
+    <circle cx="670" cy="133" r="5"/>
+    <circle cx="738" cy="196" r="5"/>
+    <circle cx="768" cy="174" r="5"/>
+    <circle cx="742" cy="244" r="5"/>
+    <circle cx="766" cy="270" r="5"/>
+    <circle cx="756" cy="302" r="5"/>
+    <circle cx="715" cy="334" r="5"/>
+    <circle cx="681" cy="350" r="5"/>
+    <circle cx="675" cy="305" r="5"/>
+    <circle cx="681" cy="232" r="5"/>
+    <circle cx="718" cy="270" r="5"/>
+  </g>
+
+  <!-- Central fusion seam -->
+  <path d="M600 131V388"
+        stroke="url(#fusion)"
+        stroke-width="8"
+        stroke-linecap="round"
+        filter="url(#softGlow)"/>
+  <path d="M600 145V375"
+        stroke="#E6F4FF"
+        stroke-width="2"
+        stroke-linecap="round"
+        opacity=".72"/>
+
+  <!-- Original GitHub-inspired code collaboration badge -->
+  <g transform="translate(474 258)">
+    <circle r="69" fill="#0A1738" stroke="#A8C8FF" stroke-width="4"/>
+    <circle r="57" fill="#152A55" stroke="#567CCE" stroke-width="2"/>
+
+    <!-- cat-ear code-hosting silhouette -->
+    <path d="
+      M-34 -12
+      L-29 -39
+      L-12 -28
+      C-4 -31 4 -31 12 -28
+      L29 -39
+      L34 -12
+      C46 -2 47 14 38 27
+      C30 39 17 45 0 45
+      C-17 45 -30 39 -38 27
+      C-47 14 -46 -2 -34 -12Z"
+      fill="#DDEBFF"/>
+
+    <!-- code chevrons cut into the mark -->
+    <path d="M-22 4L-34 14L-22 24"
+          fill="none" stroke="#203864" stroke-width="6"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M22 4L34 14L22 24"
+          fill="none" stroke="#203864" stroke-width="6"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M7 -1L-6 29"
+          fill="none" stroke="#203864" stroke-width="6"
+          stroke-linecap="round"/>
+
+    <!-- git branch -->
+    <path d="M-20 -13V-1C-20 8 -13 14 -4 14H4"
+          fill="none" stroke="#203864" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="-20" cy="-16" r="5" fill="#203864"/>
+    <circle cx="8" cy="14" r="5" fill="#203864"/>
+  </g>
+
+  <!-- AI automation core -->
+  <g transform="translate(650 256)">
+    <circle r="76" fill="#071832" stroke="#45EBD2" stroke-width="4"/>
+    <circle r="62" fill="url(#aiCore)" opacity=".18" stroke="#86FFF0" stroke-width="2"/>
+
+    <!-- stylized AI monogram -->
+    <path d="M-35 30L-10 -34L15 30M-25 7H5"
+          fill="none" stroke="#EAFBFF" stroke-width="8"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M31 -31V31"
+          fill="none" stroke="#EAFBFF" stroke-width="8"
+          stroke-linecap="round"/>
+
+    <!-- automation gear ring -->
+    <g fill="none" stroke="#62F6DB" stroke-width="5" stroke-linecap="round">
+      <path d="M0 -55V-66M0 55V66M55 0H66M-55 0H-66"/>
+      <path d="M39 -39L47 -47M39 39L47 47M-39 39L-47 47M-39 -39L-47 -47"/>
+    </g>
+    <circle r="52" fill="none" stroke="#49DCC8" stroke-width="2" stroke-dasharray="5 9"/>
+  </g>
+
+  <!-- Flow arrows showing merge into automation -->
+  <g fill="none" stroke="url(#fusion)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M545 205C570 187 584 188 600 205"/>
+    <path d="M655 205C630 187 616 188 600 205"/>
+    <path d="M585 198L600 211L615 198"/>
+  </g>
+
+  <!-- Small process pulses -->
+  <g fill="#76FFE4" filter="url(#nodeGlow)">
+    <circle cx="568" cy="176" r="4"/>
+    <circle cx="600" cy="162" r="4"/>
+    <circle cx="632" cy="176" r="4"/>
+  </g>
+
+  <!-- Bottom data-flow details -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M444 400H520L548 419H652L680 400H756"
+          stroke="#6C91FF" stroke-width="3" opacity=".65"/>
+    <path d="M506 427H694"
+          stroke="#38E5CE" stroke-width="3" stroke-dasharray="8 10" opacity=".55"/>
+  </g>
+
+  <g fill="#72FFE3" filter="url(#nodeGlow)">
+    <circle cx="444" cy="400" r="4"/>
+    <circle cx="756" cy="400" r="4"/>
+    <circle cx="548" cy="419" r="4"/>
+    <circle cx="652" cy="419" r="4"/>
+  </g>
+</svg>
+

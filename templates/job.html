@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job.id }} · Ticket PR Agent{% endblock %}
+{% block content %}
+<div id="job" data-job-id="{{ job.id }}">
+  <section class="hero compact">
+    <p class="eyebrow">Job {{ job.id }}</p>
+    <h1 id="stage">{{ job.stage }}</h1>
+    <p><a href="{{ job.issue_url }}" target="_blank" rel="noreferrer">{{ job.issue_url }}</a></p>
+  </section>
+
+  <div class="stats">
+    <div class="stat"><span>Status</span><strong id="status" class="status {{ job.status }}">{{ job.status }}</strong></div>
+    <div class="stat"><span>Base branch</span><strong><code>{{ job.base_branch }}</code></strong></div>
+    <div class="stat"><span>Created</span><strong>{{ job.created_at[:19].replace('T', ' ') }}</strong></div>
+  </div>
+
+  <div id="error-box" class="alert error" {% if not job.error %}hidden{% endif %}>{{ job.error or '' }}</div>
+
+  <section id="result-box" class="panel" {% if not job.result %}hidden{% endif %}>
+    <h2>Result</h2>
+    <p id="summary">{{ job.result.summary if job.result else '' }}</p>
+    <dl>
+      <dt>Root cause</dt><dd id="root-cause">{{ job.result.root_cause if job.result else '' }}</dd>
+      <dt>Branch</dt><dd><code id="branch">{{ job.result.branch_name if job.result else '' }}</code></dd>
+      <dt>Confidence</dt><dd id="confidence">{% if job.result %}{{ (job.result.confidence * 100)|round|int }}%{% endif %}</dd>
+      <dt>Pull request</dt><dd><a id="pr-link" href="{{ job.result.pr_url if job.result else '#' }}" target="_blank" rel="noreferrer">{{ job.result.pr_url if job.result else '' }}</a></dd>
+    </dl>
+  </section>
+
+  <section class="section-head"><h2>Execution log</h2><span>Refreshes automatically</span></section>
+  <pre id="logs" class="logs">{{ job.logs }}</pre>
+</div>
+<script>
+const root = document.getElementById('job');
+const jobId = root.dataset.jobId;
+let active = {{ 'true' if job.status in ['queued', 'running'] else 'false' }};
+
+function applyJob(job) {
+  document.getElementById('stage').textContent = job.stage;
+  const status = document.getElementById('status');
+  status.textContent = job.status;
+  status.className = `status ${job.status}`;
+  const logs = document.getElementById('logs');
+  const atBottom = logs.scrollTop + logs.clientHeight >= logs.scrollHeight - 40;
+  logs.textContent = job.logs || '';
+  if (atBottom) logs.scrollTop = logs.scrollHeight;
+
+  const errorBox = document.getElementById('error-box');
+  errorBox.hidden = !job.error;
+  errorBox.textContent = job.error || '';
+
+  const resultBox = document.getElementById('result-box');
+  resultBox.hidden = !job.result;
+  if (job.result) {
+    document.getElementById('summary').textContent = job.result.summary || '';
+    document.getElementById('root-cause').textContent = job.result.root_cause || '';
+    document.getElementById('branch').textContent = job.result.branch_name || '';
+    document.getElementById('confidence').textContent = `${Math.round((job.result.confidence || 0) * 100)}%`;
+    const link = document.getElementById('pr-link');
+    link.href = job.result.pr_url;
+    link.textContent = job.result.pr_url;
+  }
+  active = ['queued', 'running'].includes(job.status);
+}
+
+async function refresh() {
+  if (!active) return;
+  const response = await fetch(`/api/jobs/${jobId}`, {cache: 'no-store'});
+  if (response.ok) applyJob(await response.json());
+  if (active) setTimeout(refresh, 2000);
+}
+setTimeout(refresh, 1000);
+</script>
+{% endblock %}
