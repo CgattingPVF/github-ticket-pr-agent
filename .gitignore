@@ -5,3 +5,4 @@ __pycache__/
 data/
 workspaces/
 *.pyc
+*:Zone.Identifier
