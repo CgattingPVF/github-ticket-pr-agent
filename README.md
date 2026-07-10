@@ -60,6 +60,21 @@ cp .env.example .env
 ./run.sh
 ```
 
+## Build a Windows executable
+
+The repository includes a GitHub Actions release workflow at `.github/workflows/release-windows.yml`.
+Push a semantic version tag to build `ticket-pr-agent.exe` and attach it to a GitHub Release:
+
+```bash
+git add .github/workflows/release-windows.yml README.md
+git commit -m "Add Windows release build"
+git push origin main
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The executable still requires the GitHub CLI (`gh`) to be installed and authenticated on the Windows machine because the application uses it to read GitHub issues.
+
 The application loads `.env` automatically from the project directory and also respects environment variables supplied by your shell, process manager, or container.
 
 ## Default Codex execution
