@@ -3,34 +3,90 @@ name: Build Windows release
 on:
   release:
     types: [published]
+  pull_request:
+    paths:
+      - '.github/workflows/release-windows.yml'
+      - '*.py'
+      - 'requirements.txt'
+      - 'static/**'
+      - 'tests/**'
   workflow_dispatch:
     inputs:
       ref:
         description: Git ref to build when running manually
         required: false
         default: main
+      release_tag:
+        description: Existing release tag to receive the exe (optional)
+        required: false
+        default: ''
 
 permissions:
   contents: write
 
 env:
-  BUILD_REF: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+  BUILD_REF: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+  RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  prepare-source:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Check out release source
-        uses: actions/checkout@v4
+      - name: Check out release source on Linux
+        uses: actions/checkout@v5
         with:
           ref: ${{ env.BUILD_REF }}
 
+      - name: Remove Windows download metadata files
+        shell: bash
+        run: |
+          echo 'Removing files that Windows cannot check out:'
+          find . -type f -name '*:Zone.Identifier' -print
+          find . -type f -name '*:Zone.Identifier' -delete
+
+          if find . -type f -name '*:Zone.Identifier' -print -quit | grep -q .; then
+            echo 'Zone.Identifier files remain after cleanup.' >&2
+            exit 1
+          fi
+
+      - name: Archive sanitized source
+        shell: bash
+        run: tar --exclude='.git' -czf "$RUNNER_TEMP/release-source.tar.gz" .
+
+      - name: Upload sanitized source
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitized-release-source
+          path: ${{ runner.temp }}/release-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  build-windows:
+    needs: prepare-source
+    runs-on: windows-latest
+
+    steps:
+      - name: Download sanitized source
+        uses: actions/download-artifact@v4
+        with:
+          name: sanitized-release-source
+          path: ${{ runner.temp }}/sanitized-release-source
+
+      - name: Extract sanitized source
+        shell: pwsh
+        run: |
+          tar -xzf "$env:RUNNER_TEMP\sanitized-release-source\release-source.tar.gz" -C "$env:GITHUB_WORKSPACE"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
         run: |
@@ -56,10 +112,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Attach executable to published release
-        if: github.event_name == 'release'
+      - name: Attach executable to release
+        if: env.RELEASE_TAG != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           files: dist/ticket-pr-agent.exe
           fail_on_unmatched_files: true
