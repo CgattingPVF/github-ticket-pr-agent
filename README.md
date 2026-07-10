@@ -62,16 +62,24 @@ cp .env.example .env
 
 ## Build a Windows executable
 
-The repository includes a GitHub Actions release workflow at `.github/workflows/release-windows.yml`.
-Push a semantic version tag to build `ticket-pr-agent.exe` and attach it to a GitHub Release:
+The repository includes a GitHub Actions workflow at `.github/workflows/release-windows.yml`.
 
-```bash
-git add .github/workflows/release-windows.yml README.md
-git commit -m "Add Windows release build"
-git push origin main
-git tag v1.0.0
-git push origin v1.0.0
-```
+When a GitHub Release is published, the workflow:
+
+1. Checks out the commit referenced by the release tag.
+2. Runs the Python test suite.
+3. Builds `ticket-pr-agent.exe` with PyInstaller on a Windows runner.
+4. Attaches the executable to the published release under **Assets**.
+
+To publish a build:
+
+1. Open **Releases** in GitHub.
+2. Select **Draft a new release**.
+3. Create or select a version tag such as `v1.0.0`.
+4. Publish the release.
+5. Wait for the **Build Windows release** workflow to complete, then download `ticket-pr-agent.exe` from the release assets.
+
+The workflow can also be run manually from the **Actions** tab. Manual runs upload the executable as a temporary workflow artifact but do not modify a GitHub Release.
 
 The executable still requires the GitHub CLI (`gh`) to be installed and authenticated on the Windows machine because the application uses it to read GitHub issues.
 
