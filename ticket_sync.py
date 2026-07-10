@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
 from openpyxl import load_workbook
+
+
+_REPOSITORY_PATTERN = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
 
 
 def _text(value: object) -> str:
@@ -15,6 +21,83 @@ def _text(value: object) -> str:
 def _priority(value: object) -> str:
     value = _text(value).upper()
     return value if value in {'P0', 'P1', 'P2'} else ''
+
+
+def _gh_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    discovered = shutil.which('gh')
+    if discovered:
+        candidates.append(Path(discovered))
+
+    program_files = os.getenv('ProgramFiles')
+    if program_files:
+        candidates.append(Path(program_files) / 'GitHub CLI' / 'gh.exe')
+
+    local_app_data = os.getenv('LOCALAPPDATA')
+    if local_app_data:
+        candidates.append(Path(local_app_data) / 'Programs' / 'GitHub CLI' / 'gh.exe')
+
+    user_profile = os.getenv('USERPROFILE')
+    if user_profile:
+        candidates.append(Path(user_profile) / 'AppData' / 'Local' / 'Programs' / 'GitHub CLI' / 'gh.exe')
+
+    return candidates
+
+
+def find_gh_executable() -> str:
+    for candidate in _gh_candidates():
+        if candidate.is_file():
+            return str(candidate)
+    raise RuntimeError(
+        'GitHub CLI (gh) was not found. Install GitHub CLI, then run '
+        '`gh auth login --hostname github.com` before reopening Ticket PR Agent.'
+    )
+
+
+def _run_gh(arguments: list[str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
+    kwargs: dict[str, object] = {
+        'capture_output': True,
+        'text': True,
+        'timeout': timeout,
+    }
+    if os.name == 'nt':
+        kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
+    try:
+        return subprocess.run([find_gh_executable(), *arguments], **kwargs)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError('GitHub CLI request timed out. Check your connection and try again.') from exc
+    except OSError as exc:
+        raise RuntimeError(f'GitHub CLI could not be started: {exc}') from exc
+
+
+def _github_api_error(repository: str, result: subprocess.CompletedProcess[str]) -> RuntimeError:
+    details = (result.stderr or result.stdout or 'GitHub API request failed').strip()
+    lowered = details.lower()
+
+    if 'not logged into any github hosts' in lowered or 'authentication' in lowered or 'bad credentials' in lowered:
+        return RuntimeError(
+            'GitHub CLI is not authenticated. Open PowerShell and run '
+            '`gh auth login --hostname github.com`, then restart the app. '
+            f'GitHub said: {details}'
+        )
+
+    if 'http 404' in lowered or 'not found' in lowered:
+        target = repository or 'the requested repositories'
+        return RuntimeError(
+            f'GitHub could not access `{target}`. Check the owner/repository name and make sure the '
+            'account shown by `gh auth status` has access to that repository. Private organisation '
+            f'repositories may also require SSO authorisation. GitHub said: {details}'
+        )
+
+    if 'http 403' in lowered or 'resource not accessible' in lowered or 'forbidden' in lowered:
+        return RuntimeError(
+            'The authenticated GitHub account does not have permission to read these issues. '
+            'Run `gh auth status`, refresh the token scopes with `gh auth refresh -h github.com -s repo`, '
+            f'and authorise organisation SSO if required. GitHub said: {details}'
+        )
+
+    return RuntimeError(f'GitHub issue sync failed: {details}')
 
 
 def import_workbook(path: Path) -> list[dict]:
@@ -51,11 +134,24 @@ def import_workbook(path: Path) -> list[dict]:
 
 
 def sync_github(repository: str = '', state: str = 'open', limit: int = 100) -> list[dict]:
-    endpoint = f'repos/{repository}/issues?state={state}&per_page={min(limit, 100)}' if repository else f'search/issues?q=state:{state}+is:issue&per_page={min(limit, 100)}'
-    result = subprocess.run(['gh', 'api', endpoint], capture_output=True, text=True, timeout=60)
+    repository = repository.strip()
+    if repository and not _REPOSITORY_PATTERN.fullmatch(repository):
+        raise ValueError('Repository must use the `owner/repository` format.')
+
+    endpoint = (
+        f'repos/{repository}/issues?state={state}&per_page={min(limit, 100)}'
+        if repository
+        else f'search/issues?q=state:{state}+is:issue&per_page={min(limit, 100)}'
+    )
+    result = _run_gh(['api', endpoint])
     if result.returncode:
-        raise RuntimeError(result.stderr.strip() or 'GitHub API request failed')
-    payload = json.loads(result.stdout)
+        raise _github_api_error(repository, result)
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f'GitHub returned invalid JSON: {exc}') from exc
+
     items = payload.get('items', []) if isinstance(payload, dict) else payload
     now = datetime.now(timezone.utc).isoformat()
     tickets = []
