@@ -3,6 +3,13 @@ name: Build Windows release
 on:
   release:
     types: [published]
+  pull_request:
+    paths:
+      - '.github/workflows/release-windows.yml'
+      - '*.py'
+      - 'requirements.txt'
+      - 'static/**'
+      - 'tests/**'
   workflow_dispatch:
     inputs:
       ref:
@@ -18,8 +25,8 @@ permissions:
   contents: write
 
 env:
-  BUILD_REF: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
-  RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
+  BUILD_REF: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+  RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
 
 jobs:
   prepare-source:
