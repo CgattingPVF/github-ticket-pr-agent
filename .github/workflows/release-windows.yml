@@ -99,10 +99,10 @@ jobs:
       - name: Build executable
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --console `
+          pyinstaller --noconfirm --clean --onefile --windowed `
             --name ticket-pr-agent `
             --add-data "static;static" `
-            app.py
+            launcher.py
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
