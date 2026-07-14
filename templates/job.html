@@ -1,48 +1,330 @@
 {% extends "base.html" %}
-{% block title %}Job {{ job.id }} · Ticket PR Agent{% endblock %}
+{% block title %}Mission {{ job.id }} · MergeQuest{% endblock %}
 {% block content %}
 <div id="job" data-job-id="{{ job.id }}">
-  <section class="hero compact">
-    <p class="eyebrow">Job {{ job.id }}</p>
-    <h1 id="stage">{{ job.stage }}</h1>
-    <p><a href="{{ job.issue_url }}" target="_blank" rel="noreferrer">{{ job.issue_url }}</a></p>
+  <nav class="crumbs"><a href="{{ url_for('index') }}">Runs</a><span>/</span><strong>{{ job.id }}</strong></nav>
+
+  <section class="mission-head">
+    <div>
+      <h1 id="stage">{{ job.stage }}</h1>
+      <p class="mission-target"><a href="{{ job.issue_url }}" target="_blank" rel="noreferrer">{{ job.issue_url|replace('https://github.com/', '') }}</a> · base <code>{{ job.base_branch }}</code> · started {{ job.created_at[:16].replace('T', ' ') }}</p>
+    </div>
+    <span id="status" class="state state-lg state-{{ job.status }}">{{ job.status|replace('_', ' ') }}</span>
   </section>
 
-  <div class="stats">
-    <div class="stat"><span>Status</span><strong id="status" class="status {{ job.status }}">{{ job.status }}</strong></div>
-    <div class="stat"><span>Base branch</span><strong><code>{{ job.base_branch }}</code></strong></div>
-    <div class="stat"><span>Created</span><strong>{{ job.created_at[:19].replace('T', ' ') }}</strong></div>
+  <div id="victory-banner" class="banner banner-victory" {% if job.status != 'completed' %}hidden{% endif %}>
+    <span class="banner-icon">✓</span>
+    <div class="victory-copy">
+      <strong>Equilibrium reached</strong><small>A reviewed pull request is waiting for your merge decision.</small>
+      <div id="victory-stats" class="victory-stats"></div>
+    </div>
+  </div>
+  <div id="intel-banner" class="banner banner-intel" {% if job.status != 'failed' %}hidden{% endif %}>
+    <span class="banner-icon">i</span>
+    <div><strong>Run blocked</strong><small>The blocker was diagnosed and documented so the next run starts smarter.</small></div>
+  </div>
+  <div id="error-box" class="flash flash-error" {% if not job.error %}hidden{% endif %}>{{ job.error or '' }}</div>
+
+  <div id="approval-box" class="gh-box approval-box" {% if job.status != 'waiting_approval' %}hidden{% endif %}>
+    <div class="approval-copy">
+      <strong>Decision point</strong>
+      <p id="approval-message">{{ job.approval_message }}</p>
+      <small>Stop here and keep what's been learned, or continue toward the merge.</small>
+    </div>
+    <div class="approval-actions">
+      <button id="approve-button" class="btn btn-primary" onclick="approve('approve')">Continue</button>
+      <button id="reject-button" class="btn btn-danger" onclick="approve('reject')">Stop here</button>
+    </div>
   </div>
 
-  <div id="error-box" class="alert error" {% if not job.error %}hidden{% endif %}>{{ job.error or '' }}</div>
+  <div class="mission-grid">
+    <aside class="gh-box checks-box">
+      <header class="gh-box-header"><strong>Gates</strong><span id="gates-progress"></span></header>
+      <ol id="stage-checks" class="stage-checks"></ol>
+      <div class="checks-actions">
+        <button id="stop-button" class="btn btn-danger-outline" onclick="stopJob()">Stop run</button>
+        <button id="close-button" class="btn" onclick="closeJob()">Archive run</button>
+      </div>
+    </aside>
 
-  <section id="result-box" class="panel" {% if not job.result %}hidden{% endif %}>
-    <h2>Result</h2>
-    <p id="summary">{{ job.result.summary if job.result else '' }}</p>
-    <dl>
-      <dt>Root cause</dt><dd id="root-cause">{{ job.result.root_cause if job.result else '' }}</dd>
-      <dt>Branch</dt><dd><code id="branch">{{ job.result.branch_name if job.result else '' }}</code></dd>
-      <dt>Confidence</dt><dd id="confidence">{% if job.result %}{{ (job.result.confidence * 100)|round|int }}%{% endif %}</dd>
-      <dt>Pull request</dt><dd><a id="pr-link" href="{{ job.result.pr_url if job.result else '#' }}" target="_blank" rel="noreferrer">{{ job.result.pr_url if job.result else '' }}</a></dd>
-    </dl>
-  </section>
+    <div class="mission-main">
+      <section id="result-box" class="gh-box result-box" {% if not job.result %}hidden{% endif %}>
+        <header class="gh-box-header"><strong>Result</strong></header>
+        <div class="result-body">
+          <p id="summary" class="result-summary">{{ job.result.summary if job.result else '' }}</p>
+          <dl>
+            <dt>Root cause</dt><dd id="root-cause">{{ job.result.root_cause if job.result else '' }}</dd>
+            <dt>Branch</dt><dd><code id="branch">{{ job.result.branch_name if job.result else '' }}</code></dd>
+            <dt>Confidence</dt><dd>
+              <span class="conf-meter"><i id="confidence-bar" style="width: {{ (job.result.confidence * 100)|round|int if job.result else 0 }}%"></i></span>
+              <span id="confidence">{% if job.result %}{{ (job.result.confidence * 100)|round|int }}%{% endif %}</span>
+            </dd>
+            <dt>Pull requests</dt><dd id="pr-links">
+              {% if job.result and job.result.pr_urls %}
+                {% for repository, url in job.result.pr_urls.items() %}<div><a href="{{ url }}" target="_blank" rel="noreferrer">{{ repository }}: {{ url|replace('https://github.com/', '') }}</a></div>{% endfor %}
+              {% elif job.result and job.result.pr_url %}
+                <a href="{{ job.result.pr_url }}" target="_blank" rel="noreferrer">{{ job.result.pr_url|replace('https://github.com/', '') }}</a>
+              {% endif %}
+            </dd>
+          </dl>
+        </div>
+      </section>
 
-  <section class="section-head"><h2>Execution log</h2><span>Refreshes automatically</span></section>
-  <pre id="logs" class="logs">{{ job.logs }}</pre>
+      <section class="gh-box feed-box">
+        <header class="gh-box-header log-heading">
+          <div><strong>Live feed</strong><span>updates automatically while the run is active</span></div>
+          <button id="log-view-toggle" class="btn btn-small" type="button">Show raw log</button>
+        </header>
+        <div id="activity-log" class="activity-log" role="log" aria-live="polite"></div>
+        <pre id="logs" class="logs" hidden>{{ job.logs }}</pre>
+      </section>
+    </div>
+  </div>
 </div>
+<canvas id="confetti-canvas" aria-hidden="true"></canvas>
 <script>
 const root = document.getElementById('job');
 const jobId = root.dataset.jobId;
-let active = {{ 'true' if job.status in ['queued', 'running'] else 'false' }};
+let active = {{ 'true' if job.status in ['queued', 'running', 'waiting_approval'] else 'false' }};
+let priorStatus = {{ job.status|tojson }};
+
+function fireConfetti() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const canvas = document.getElementById('confetti-canvas');
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+  const colors = ['#58a6ff', '#3fb950', '#a371f7', '#d29922', '#f85149'];
+  const pieces = Array.from({length: 140}, () => ({
+    x: Math.random() * canvas.width,
+    y: -20 - Math.random() * canvas.height * 0.5,
+    vx: (Math.random() - 0.5) * 3,
+    vy: 2 + Math.random() * 3,
+    size: 4 + Math.random() * 5,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    rotation: Math.random() * Math.PI,
+    spin: (Math.random() - 0.5) * 0.3,
+  }));
+  const start = performance.now();
+  function tick(now) {
+    const elapsed = now - start;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of pieces) {
+      p.x += p.vx; p.y += p.vy; p.rotation += p.spin;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+      ctx.restore();
+    }
+    if (elapsed < 3200) requestAnimationFrame(tick);
+    else ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  requestAnimationFrame(tick);
+}
+
+function renderVictoryStats(result) {
+  const box = document.getElementById('victory-stats');
+  if (!result) { box.replaceChildren(); return; }
+  const stats = [];
+  const duration = result.duration_seconds;
+  if (typeof duration === 'number') {
+    const mins = Math.floor(duration / 60);
+    const secs = duration % 60;
+    stats.push(['Time taken', mins ? `${mins}m ${secs}s` : `${secs}s`]);
+  }
+  if (typeof result.additions === 'number' || typeof result.deletions === 'number') {
+    stats.push(['Lines changed', `+${result.additions || 0} / -${result.deletions || 0}`]);
+  }
+  if (typeof result.confidence === 'number') {
+    stats.push(['Confidence', `${Math.round(result.confidence * 100)}%`]);
+  }
+  if (result.assignee) {
+    stats.push(['Assigned to', `@${result.assignee}`]);
+  }
+  box.replaceChildren(...stats.map(([label, value]) => {
+    const el = document.createElement('span');
+    el.className = 'victory-stat';
+    el.innerHTML = `<strong>${value}</strong><small>${label}</small>`;
+    return el;
+  }));
+}
+let rawLog = {{ job.logs|tojson }};
+let currentJob = {stage: {{ job.stage|tojson }}, status: {{ job.status|tojson }}};
+
+const GATES = [
+  'Checking GitHub access', 'Reading ticket', 'Cloning repository',
+  'Investigating and implementing', 'Running validation', 'Reviewing the change',
+  'Committing and pushing', 'Creating pull request', 'Posting code review',
+  'Linking original ticket', 'Completed',
+];
+const GATE_ALIASES = {'Repairing review findings': 'Reviewing the change', 'Re-running validation': 'Running validation', 'Starting': 'Checking GitHub access', 'Queued': 'Checking GitHub access'};
+
+function gateIndex(stage) {
+  for (const [prefix, target] of Object.entries(GATE_ALIASES)) {
+    if (stage.startsWith(prefix)) stage = target;
+  }
+  const index = GATES.indexOf(stage);
+  return index === -1 ? (currentJob.status === 'completed' ? GATES.length - 1 : 0) : index;
+}
+
+function renderGates() {
+  const list = document.getElementById('stage-checks');
+  const current = gateIndex(currentJob.stage || '');
+  const failed = ['failed', 'stopped', 'cancelled'].includes(currentJob.status);
+  const done = currentJob.status === 'completed';
+  list.replaceChildren();
+  // The local-repo path skips cloning; still show it as passed once beyond it.
+  GATES.forEach((gate, index) => {
+    const item = document.createElement('li');
+    let cls = 'pending', icon = '○';
+    if (done || index < current) { cls = 'passed'; icon = '✓'; }
+    else if (index === current) {
+      if (failed) { cls = 'failed'; icon = '✕'; }
+      else if (currentJob.status === 'waiting_approval') { cls = 'waiting'; icon = '⏸'; }
+      else if (active) { cls = 'running'; icon = '●'; }
+      else { cls = 'pending'; icon = '○'; }
+    }
+    item.className = `gate ${cls}`;
+    item.innerHTML = `<span class="gate-icon">${icon}</span><span>${gate}</span>` + (index === current && !done ? '<em class="gate-now">now</em>' : '');
+    list.appendChild(item);
+  });
+  const passed = done ? GATES.length : current;
+  document.getElementById('gates-progress').textContent = `${passed}/${GATES.length} gates`;
+}
+
+function activityItem(kind, title, detail = '') {
+  const item = document.createElement('div');
+  item.className = `activity-item ${kind}`;
+  const marker = document.createElement('span');
+  marker.className = 'activity-marker';
+  marker.setAttribute('aria-hidden', 'true');
+  const content = document.createElement('div');
+  const heading = document.createElement('strong');
+  heading.textContent = title;
+  content.appendChild(heading);
+  if (detail && detail !== title) {
+    const body = document.createElement('div');
+    body.className = 'activity-detail';
+    body.textContent = detail;
+    content.appendChild(body);
+  }
+  item.append(marker, content);
+  return item;
+}
+
+function codexEvent(event) {
+  const item = event.item || {};
+  if (event.type === 'thread.started') return ['info', 'Coding agent started', 'A new agent session is ready.'];
+  if (event.type === 'turn.started') return ['running', 'Coding agent is working', 'Investigating the ticket and repository.'];
+  if (event.type === 'turn.completed') return ['success', 'Coding agent finished', event.usage ? `Tokens used: ${event.usage.output_tokens || 0} output` : ''];
+  if (event.type === 'turn.failed' || event.type === 'error') return ['error', 'Coding agent error', event.error?.message || event.message || ''];
+  if (item.type === 'agent_message' && item.text) return ['agent', 'Agent update', item.text];
+  if (item.type === 'reasoning' && item.text) return ['agent', 'Agent is investigating', item.text];
+  if (item.type === 'command_execution') {
+    const command = item.command || 'Command';
+    if (event.type === 'item.started') return ['command', 'Running command', command];
+    const failed = Number(item.exit_code) !== 0;
+    return [failed ? 'error' : 'success', failed ? 'Command failed' : 'Command completed', command];
+  }
+  if (item.type === 'file_change') return ['success', 'Files updated', item.path || item.file_path || 'The agent applied a code change.'];
+  return false;
+}
+
+function claudeEvent(event) {
+  if (event.type === 'system' && event.subtype === 'init') return ['info', 'Coding agent started', 'A new agent session is ready.'];
+  if (event.type === 'assistant') {
+    const blocks = event.message?.content || [];
+    for (const block of blocks) {
+      if (block.type === 'text' && block.text) return ['agent', 'Agent update', block.text];
+      if (block.type === 'tool_use') return ['command', 'Running command', block.name === 'Bash' ? (block.input?.command || 'Command') : `${block.name} ${JSON.stringify(block.input || {})}`];
+    }
+    return false;
+  }
+  if (event.type === 'user') {
+    const blocks = event.message?.content || [];
+    for (const block of blocks) {
+      if (block.type === 'tool_result') return [block.is_error ? 'error' : 'success', block.is_error ? 'Command failed' : 'Command completed', typeof block.content === 'string' ? block.content : JSON.stringify(block.content || '')];
+    }
+    return false;
+  }
+  if (event.type === 'result') {
+    if (event.is_error) return ['error', 'Coding agent error', event.result || 'The agent reported an error.'];
+    return ['success', 'Coding agent finished', event.usage ? `Tokens used: ${event.usage.output_tokens || 0} output` : ''];
+  }
+  return false;
+}
+
+function agentEvent(line) {
+  if (!line.startsWith('{')) return null;
+  try {
+    const event = JSON.parse(line);
+    if (event.type && event.type.startsWith('thread.') || event.type === 'turn.started' || event.type === 'turn.completed' || event.type === 'turn.failed' || event.type === 'item.started' || event.type === 'item.completed') return codexEvent(event);
+    if (['system', 'assistant', 'user', 'result'].includes(event.type)) return claudeEvent(event);
+    if (event.type === 'error') return codexEvent(event);
+    return false;
+  } catch (_) { return null; }
+}
+
+function renderActivity(logText) {
+  const feed = document.getElementById('activity-log');
+  const wasAtBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 50;
+  feed.replaceChildren();
+  const lines = (logText || '').split(/\r?\n/).filter(line => line.trim());
+  let hiddenJson = 0;
+  for (const line of lines) {
+    const event = agentEvent(line);
+    if (event === false) { hiddenJson += 1; continue; }
+    if (event) { feed.appendChild(activityItem(...event)); continue; }
+    const stage = line.match(/^==\s*(.*?)\s*==$/);
+    if (stage) { feed.appendChild(activityItem('stage', stage[1])); continue; }
+    if (line.startsWith('$ ')) { feed.appendChild(activityItem('command', 'Running command', line.slice(2))); continue; }
+    if (line.startsWith('ERROR:')) { feed.appendChild(activityItem('error', 'Mission blocked', line.slice(6).trim())); continue; }
+    if (line.startsWith('Agent summary:')) { feed.appendChild(activityItem('agent', 'Agent summary', line.slice(14).trim())); continue; }
+    if (line.startsWith('Root cause:')) { feed.appendChild(activityItem('info', 'Root cause identified', line.slice(11).trim())); continue; }
+    if (line.startsWith('Unresolved risks:')) { feed.appendChild(activityItem('warning', 'Unresolved risks')); continue; }
+    if (line.startsWith('- ')) { feed.appendChild(activityItem('warning', 'Risk', line.slice(2))); continue; }
+    if (/^(Completed:|Safe to submit as PR: yes)/.test(line)) { feed.appendChild(activityItem('success', line)); continue; }
+    if (/^(Safe to submit as PR: no|Approval required:)/.test(line)) { feed.appendChild(activityItem('warning', line)); continue; }
+    feed.appendChild(activityItem('output', line));
+  }
+  if (!lines.length) feed.appendChild(activityItem('running', 'Waiting to start', 'Activity will appear here shortly.'));
+  if (hiddenJson) feed.appendChild(activityItem('info', 'Additional technical events hidden', `${hiddenJson} low-level events are available in the raw log.`));
+  if (wasAtBottom) feed.scrollTop = feed.scrollHeight;
+}
+
+document.getElementById('log-view-toggle').addEventListener('click', event => {
+  const raw = document.getElementById('logs');
+  const feed = document.getElementById('activity-log');
+  raw.hidden = !raw.hidden;
+  feed.hidden = !feed.hidden;
+  event.currentTarget.textContent = raw.hidden ? 'Show raw log' : 'Show friendly view';
+});
 
 function applyJob(job) {
+  currentJob = job;
   document.getElementById('stage').textContent = job.stage;
   const status = document.getElementById('status');
-  status.textContent = job.status;
-  status.className = `status ${job.status}`;
+  status.textContent = job.status.replace(/_/g, ' ');
+  status.className = `state state-lg state-${job.status}`;
+  document.getElementById('victory-banner').hidden = job.status !== 'completed';
+  document.getElementById('intel-banner').hidden = job.status !== 'failed';
+  if (job.status === 'completed' && priorStatus !== 'completed') {
+    renderVictoryStats(job.result);
+    fireConfetti();
+  }
+  priorStatus = job.status;
+  const approvalBox = document.getElementById('approval-box');
+  approvalBox.hidden = job.status !== 'waiting_approval';
+  document.getElementById('approval-message').textContent = job.approval_message || '';
+  document.getElementById('stop-button').hidden = !['queued', 'running', 'waiting_approval'].includes(job.status);
+  document.getElementById('close-button').hidden = ['queued', 'running', 'waiting_approval', 'closed'].includes(job.status);
   const logs = document.getElementById('logs');
   const atBottom = logs.scrollTop + logs.clientHeight >= logs.scrollHeight - 40;
-  logs.textContent = job.logs || '';
+  rawLog = job.logs || '';
+  logs.textContent = rawLog;
+  renderActivity(rawLog);
   if (atBottom) logs.scrollTop = logs.scrollHeight;
 
   const errorBox = document.getElementById('error-box');
@@ -55,20 +337,85 @@ function applyJob(job) {
     document.getElementById('summary').textContent = job.result.summary || '';
     document.getElementById('root-cause').textContent = job.result.root_cause || '';
     document.getElementById('branch').textContent = job.result.branch_name || '';
-    document.getElementById('confidence').textContent = `${Math.round((job.result.confidence || 0) * 100)}%`;
-    const link = document.getElementById('pr-link');
-    link.href = job.result.pr_url;
-    link.textContent = job.result.pr_url;
+    const pct = Math.round((job.result.confidence || 0) * 100);
+    document.getElementById('confidence').textContent = `${pct}%`;
+    document.getElementById('confidence-bar').style.width = `${pct}%`;
+    const links = document.getElementById('pr-links');
+    links.replaceChildren();
+    const pullRequests = job.result.pr_urls || (job.result.pr_url ? {repository: job.result.pr_url} : {});
+    for (const [repository, url] of Object.entries(pullRequests)) {
+      const row = document.createElement('div');
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.textContent = `${repository}: ${url.replace('https://github.com/', '')}`;
+      row.appendChild(link);
+      links.appendChild(row);
+    }
   }
-  active = ['queued', 'running'].includes(job.status);
+  active = ['queued', 'running', 'waiting_approval'].includes(job.status);
+  renderGates();
+}
+
+async function approve(action) {
+  const buttons = [document.getElementById('approve-button'), document.getElementById('reject-button')];
+  buttons.forEach(button => button.disabled = true);
+  try {
+    const response = await fetch(`/api/jobs/${jobId}/approval`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action})
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || `Approval failed (${response.status})`);
+    applyJob(body);
+  } catch (error) {
+    showError(`Could not update approval: ${error.message}`);
+  } finally {
+    buttons.forEach(button => button.disabled = false);
+  }
+}
+async function stopJob() {
+  if (!confirm('Stop this run? It will not advance to another gate.')) return;
+  try {
+    const response = await fetch(`/api/jobs/${jobId}/stop`, {method: 'POST'});
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || `Stop failed (${response.status})`);
+    applyJob(body);
+  } catch (error) { showError(`Could not stop job: ${error.message}`); }
+}
+async function closeJob() {
+  try {
+    const response = await fetch(`/api/jobs/${jobId}/close`, {method: 'POST'});
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || `Close failed (${response.status})`);
+    applyJob(body);
+  } catch (error) { showError(`Could not close job: ${error.message}`); }
+}
+
+function showError(message) {
+  const errorBox = document.getElementById('error-box');
+  errorBox.hidden = false;
+  errorBox.textContent = message;
 }
 
 async function refresh() {
   if (!active) return;
-  const response = await fetch(`/api/jobs/${jobId}`, {cache: 'no-store'});
-  if (response.ok) applyJob(await response.json());
+  try {
+    const response = await fetch(`/api/jobs/${jobId}`, {cache: 'no-store'});
+    if (!response.ok) throw new Error(`Refresh failed (${response.status})`);
+    applyJob(await response.json());
+  } catch (error) {
+    showError(`Could not contact the job server: ${error.message}`);
+  }
   if (active) setTimeout(refresh, 2000);
 }
+renderActivity(rawLog);
+renderGates();
+document.getElementById('stop-button').hidden = !['queued', 'running', 'waiting_approval'].includes(currentJob.status);
+document.getElementById('close-button').hidden = ['queued', 'running', 'waiting_approval', 'closed'].includes(currentJob.status);
+if (currentJob.status === 'completed') renderVictoryStats({{ (job.result or {})|tojson }});
 setTimeout(refresh, 1000);
 </script>
 {% endblock %}

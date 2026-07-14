@@ -152,6 +152,39 @@ class GitHubOps:
             raise WorkflowError("GitHub CLI did not return a pull request URL.")
         return url
 
+    def assign_issue(self, ref: IssueRef, login: str) -> None:
+        run_command(
+            ["gh", "issue", "edit", str(ref.number), "--repo", ref.full_name, "--add-assignee", login],
+            timeout=self.timeout,
+            log=self.log,
+            check=False,
+        )
+
+    def assign_pr(self, ref: IssueRef, pr_url: str, login: str) -> None:
+        pr_number = int(pr_url.rstrip("/").split("/")[-1])
+        run_command(
+            ["gh", "pr", "edit", str(pr_number), "--repo", ref.full_name, "--add-assignee", login],
+            timeout=self.timeout,
+            log=self.log,
+            check=False,
+        )
+
+    def diff_stat(self, repo_dir: Path, base_branch: str) -> tuple[int, int]:
+        result = run_command(
+            ["git", "diff", "--numstat", f"origin/{base_branch}...HEAD"],
+            cwd=repo_dir,
+            timeout=self.timeout,
+            log=self.log,
+            check=False,
+        )
+        additions = deletions = 0
+        for line in result.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+                additions += int(parts[0])
+                deletions += int(parts[1])
+        return additions, deletions
+
     def comment_on_issue(self, ref: IssueRef, body: str, artifact_dir: Path) -> None:
         body_file = artifact_dir / "issue-comment.md"
         body_file.write_text(body, encoding="utf-8")

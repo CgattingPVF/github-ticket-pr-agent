@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Prompt lab · MergeQuest{% endblock %}
+{% block content %}
+<section class="lab-head">
+  <div>
+    <h1>Prompt lab</h1>
+    <p>Sync your GitHub queue, pick a ticket, and build an investigation, review, or all-in-one prompt with the branch settings baked in.</p>
+  </div>
+  <div class="lab-auth">
+    <span id="auth-status" hidden><a class="btn" href="/logout">Sign out of GitHub</a></span>
+    <span id="no-auth-status"><a class="btn btn-primary" href="/login">Sign in with GitHub</a></span>
+  </div>
+</section>
+
+<div class="lab-layout">
+  <section class="gh-box">
+    <header class="gh-box-header">
+      <strong>Ticket queue</strong>
+      <span class="board-hint">GitHub is the source of truth · priority from P0/P1/P2 labels</span>
+    </header>
+    <div class="form-body">
+      <label>Repository<input type="text" id="repository" value="pvfscaffolding/crm-staff-desktop" placeholder="owner/repository"></label>
+      <div class="lab-sync-row">
+        <div id="ticketStatus" class="sync-status"></div>
+        <button class="btn btn-primary" onclick="syncGithub()">↻ Sync GitHub issues</button>
+      </div>
+      <div class="issue-list" id="ticketQueue"></div>
+    </div>
+  </section>
+
+  <section class="gh-box">
+    <header class="gh-box-header"><strong>Build a prompt</strong><span class="board-hint">pick a ticket or paste an issue URL</span></header>
+    <div class="form-body">
+      <label>Issue URL<input type="text" id="issueUrl" placeholder="https://github.com/owner/repo/issues/123"></label>
+      <div class="two-col">
+        <label>Base branch<input type="text" id="baseBranch" value="develop"></label>
+        <label>Branch prefix<input type="text" id="branchPrefix" value="bug-fix"></label>
+      </div>
+      <div class="lab-actions">
+        <button class="btn btn-primary" onclick="generatePrompt('investigation')">🔍 Investigation prompt</button>
+        <button class="btn" onclick="generatePrompt('review')">🧐 Review prompt</button>
+        <button class="btn" onclick="generatePrompt('all-in-one')">🎯 All-in-one prompt</button>
+        <a class="btn btn-launch-small" href="/jobs">▶ Run from the dashboard instead</a>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="output-wrap" hidden>
+  <header class="section-title"><h2>Forged prompt</h2><button id="copyBtn" class="btn btn-small" onclick="copyOutput()">Copy prompt</button></header>
+  <pre id="output" class="logs prompt-output"></pre>
+</div>
+
+<script>
+fetch('/api/user').then(r => r.json()).then(data => {
+  if (data.login) {
+    document.getElementById('auth-status').hidden = false;
+    document.getElementById('no-auth-status').hidden = true;
+  }
+}).catch(() => {});
+
+async function generatePrompt(kind) {
+  const issueUrl = document.getElementById('issueUrl').value.trim();
+  if (!issueUrl) { showOutput('Error: Issue URL required'); return; }
+  try {
+    const res = await fetch(`/prompt/${kind}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        issue_url: issueUrl,
+        base_branch: document.getElementById('baseBranch').value.trim(),
+        branch_prefix: document.getElementById('branchPrefix').value.trim(),
+      })
+    });
+    const data = await res.json();
+    showOutput(data.prompt || `Error: ${data.error}`);
+  } catch (e) {
+    showOutput(`Error: ${e.message}`);
+  }
+}
+
+function showOutput(text) {
+  document.getElementById('output').textContent = text;
+  const wrap = document.getElementById('output-wrap');
+  wrap.hidden = false;
+  wrap.scrollIntoView({behavior: 'smooth'});
+}
+
+function copyOutput() {
+  navigator.clipboard.writeText(document.getElementById('output').textContent).then(() => {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy prompt'; }, 2000);
+  }).catch(err => alert('Failed to copy: ' + err));
+}
+
+async function syncGithub() {
+  const status = document.getElementById('ticketStatus');
+  status.textContent = 'Syncing…';
+  const res = await fetch('/tickets/sync', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({repository: document.getElementById('repository').value})
+  });
+  const data = await res.json();
+  status.textContent = data.error || `Synced ${data.count} tickets`;
+  loadTickets();
+}
+
+async function loadTickets() {
+  const res = await fetch('/tickets');
+  const data = await res.json();
+  const queue = document.getElementById('ticketQueue');
+  queue.replaceChildren();
+  if (!data.tickets.length) {
+    queue.innerHTML = '<div class="empty-state"><span>⌁</span><strong>No synced issues</strong><small>Sync a repository above to fill the queue.</small></div>';
+    return;
+  }
+  const threatOf = p => ({P0: 'critical', P1: 'high', P2: 'medium'}[p] || 'low');
+  for (const t of data.tickets) {
+    const threat = threatOf(t.priority);
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'issue-row';
+    row.addEventListener('click', () => useTicket(t.url, row));
+    const labels = (t.labels || '').split(',').filter(l => l.trim())
+      .map(l => `<i class="gh-label">${l.trim()}</i>`).join('');
+    row.innerHTML = `
+      <span class="issue-open-icon threat-${threat}"><svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill="currentColor" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg></span>
+      <span class="issue-main">
+        <span class="issue-title"></span>
+        <span class="issue-labels">${t.priority ? `<i class="gh-label threat-${threat}">${t.priority}</i>` : ''}${labels}</span>
+        <small class="issue-meta">#${t.number} · ${t.assignees || 'unassigned'} · updated ${String(t.updated_at || '').slice(0, 10)}</small>
+      </span>
+      <span class="issue-side"><b class="threat-tag threat-${threat}">${threat}</b></span>`;
+    row.querySelector('.issue-title').textContent = t.title;
+    queue.appendChild(row);
+  }
+}
+
+function useTicket(url, row) {
+  document.querySelectorAll('.issue-row').forEach(r => r.classList.remove('selected'));
+  row.classList.add('selected');
+  document.getElementById('issueUrl').value = url;
+  document.getElementById('issueUrl').scrollIntoView({behavior: 'smooth', block: 'center'});
+  document.getElementById('issueUrl').focus();
+}
+loadTickets();
+</script>
+{% endblock %}

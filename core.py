@@ -3,10 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import queue
 import re
 import shlex
 import shutil
 import subprocess
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -102,30 +105,122 @@ def run_command(
     if log:
         log(f"$ {printable}")
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             args,
             cwd=str(cwd) if cwd else None,
-            input=stdin_text,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=timeout,
+            stdin=subprocess.PIPE if stdin_text is not None else None,
+            bufsize=1,
             env=env,
-            check=False,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise WorkflowError(f"Command timed out after {timeout} seconds: {printable}") from exc
     except OSError as exc:
         raise WorkflowError(f"Could not run command: {printable}: {exc}") from exc
 
-    output = completed.stdout or ""
-    if log and output:
-        for line in output.rstrip().splitlines():
-            log(line)
-    result = CommandResult(args=args, returncode=completed.returncode, stdout=output)
-    if check and completed.returncode != 0:
-        raise WorkflowError(f"Command failed with exit code {completed.returncode}: {printable}")
+    lines: queue.Queue[str | None] = queue.Queue()
+
+    def read_output() -> None:
+        assert process.stdout is not None
+        try:
+            for line in process.stdout:
+                lines.put(line)
+        finally:
+            lines.put(None)
+
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader.start()
+    if process.stdin is not None:
+        try:
+            process.stdin.write(stdin_text or "")
+            process.stdin.close()
+        except BrokenPipeError:
+            pass
+
+    output_parts: list[str] = []
+    deadline = time.monotonic() + timeout
+    stream_closed = False
+    while not stream_closed:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            process.kill()
+            process.wait()
+            raise WorkflowError(f"Command timed out after {timeout} seconds: {printable}")
+        try:
+            line = lines.get(timeout=min(0.25, remaining))
+        except queue.Empty:
+            continue
+        if line is None:
+            stream_closed = True
+            continue
+        output_parts.append(line)
+        if log:
+            log(line.rstrip("\r\n"))
+
+    returncode = process.wait()
+    output = "".join(output_parts)
+    result = CommandResult(args=args, returncode=returncode, stdout=output)
+    if check and returncode != 0:
+        raise WorkflowError(f"Command failed with exit code {returncode}: {printable}")
     return result
+
+
+def _augment_claude_command(args: list[str]) -> list[str]:
+    # `claude -p` with the default text format prints nothing until it exits, so the
+    # live log looks frozen. Force stream-json so each turn is emitted as it happens.
+    if (
+        args
+        and os.path.basename(args[0]) == "claude"
+        and "-p" in args
+        and "--output-format" not in args
+    ):
+        return [*args, "--output-format", "stream-json", "--verbose"]
+    return args
+
+
+def _summarize_tool_use(block: dict) -> str:
+    name = block.get("name", "tool")
+    inp = block.get("input", {}) or {}
+    detail = (
+        inp.get("command")
+        or inp.get("file_path")
+        or inp.get("path")
+        or inp.get("pattern")
+        or inp.get("description")
+        or inp.get("prompt")
+        or inp.get("url")
+        or ""
+    )
+    detail = " ".join(str(detail).split())  # collapse newlines/whitespace
+    if len(detail) > 160:
+        detail = detail[:157] + "..."
+    return f"⚙ {name}: {detail}" if detail else f"⚙ {name}"
+
+
+def _format_stream_json_line(line: str) -> str:
+    # Turn one claude stream-json event into a readable log line ("" to drop it).
+    stripped = line.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return line.rstrip("\r\n")
+    try:
+        event = json.loads(stripped)
+    except json.JSONDecodeError:
+        return line.rstrip("\r\n")
+    etype = event.get("type")
+    if etype == "system":
+        model = event.get("model", "")
+        return f"▸ session started ({model})" if model else ""  # skip subagent inits
+    if etype == "assistant":
+        parts: list[str] = []
+        for block in event.get("message", {}).get("content", []):
+            if block.get("type") == "text" and block.get("text", "").strip():
+                parts.append(block["text"].strip())
+            elif block.get("type") == "tool_use":
+                parts.append(_summarize_tool_use(block))
+        return "\n".join(parts)
+    if etype == "result":
+        return f"✓ {event.get('subtype', 'done')} ({event.get('num_turns', '?')} turns)"
+    return ""  # tool_result / user echoes — skip the noise
 
 
 def run_configured_command(
@@ -142,12 +237,19 @@ def run_configured_command(
         raise WorkflowError(f"Invalid command configuration: {exc}") from exc
     if not args:
         raise WorkflowError("Agent command is empty.")
+    args = _augment_claude_command(args)
     safe_env = os.environ.copy()
     for sensitive_name in ("GH_TOKEN", "GITHUB_TOKEN", "SECRET_KEY"):
         safe_env.pop(sensitive_name, None)
     safe_env["TICKET_AGENT_AUTOMATION"] = "1"
+    effective_log = log
+    if "stream-json" in args:
+        def effective_log(line: str, _log: Callable[[str], None] = log) -> None:
+            text = _format_stream_json_line(line)
+            if text:
+                _log(text)
     return run_command(
-        args, cwd=cwd, stdin_text=prompt, timeout=timeout, log=log, env=safe_env
+        args, cwd=cwd, stdin_text=prompt, timeout=timeout, log=effective_log, env=safe_env
     )
 
 
@@ -163,6 +265,26 @@ def load_json(path: Path) -> dict:
 def dump_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def generate_test_plan(
+    agent_command: str, cwd: Path, issue: dict, result_path: Path, timeout: int,
+    log: Callable[[str], None] | None = None,
+) -> dict:
+    """Ask the coding agent to derive repro/pass-verification steps from a ticket's
+    text alone (read-only, no repository access) and return {repro_steps, pass_steps}."""
+    from prompts import test_plan_prompt  # local import: prompts.py does not depend on core.py
+
+    result_path.unlink(missing_ok=True)
+    run_configured_command(
+        agent_command, cwd=cwd, prompt=test_plan_prompt(issue, str(result_path)), timeout=timeout, log=log,
+    )
+    plan = load_json(result_path)
+    ensure_keys(plan, ["repro_steps", "pass_steps"], "Test plan")
+    return {
+        "repro_steps": [str(item) for item in plan["repro_steps"]],
+        "pass_steps": [str(item) for item in plan["pass_steps"]],
+    }
 
 
 def parse_validation_commands(raw: str) -> list[list[str]]:

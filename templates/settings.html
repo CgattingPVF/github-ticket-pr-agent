@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Settings · MergeQuest{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <p class="eyebrow">CONTROL ROOM</p>
+  <h1>Settings</h1>
+  <p class="hero-copy">Review the active runtime configuration. Secrets stay in your environment and are never displayed here.</p>
+</section>
+
+<div class="two-col">
+  <section class="gh-box">
+    <header class="gh-box-header"><strong>AI agents</strong></header>
+    <dl class="settings-list">
+      <dt>Coding agent</dt><dd><code>{{ settings.agent_command }}</code></dd>
+      <dt>Review agent</dt><dd><code>{{ settings.review_command }}</code></dd>
+      <dt>Claude Code</dt><dd><code>{{ settings.claude_command }}</code></dd>
+      <dt>Minimum confidence</dt><dd>{{ (settings.minimum_confidence * 100)|round|int }}%</dd>
+      <dt>Repair cycles</dt><dd>{{ settings.max_repair_cycles }}</dd>
+    </dl>
+    <p class="muted">Set defaults with <code>AGENT_COMMAND</code>, <code>REVIEW_COMMAND</code>, and <code>CLAUDE_COMMAND</code> in <code>.env</code>. Individual missions can override them.</p>
+  </section>
+  <section class="gh-box">
+    <header class="gh-box-header"><strong>Runtime</strong></header>
+    <dl class="settings-list">
+      <dt>Workspace</dt><dd><code>{{ settings.workspace_root }}</code></dd>
+      <dt>Data directory</dt><dd><code>{{ settings.data_dir }}</code></dd>
+      <dt>Command timeout</dt><dd>{{ settings.command_timeout_seconds }} seconds</dd>
+      <dt>Review timeout</dt><dd>{{ settings.review_timeout_seconds }} seconds</dd>
+      <dt>Local repository</dt><dd><code>{{ settings.local_repo_path or 'Cloning per mission' }}</code></dd>
+    </dl>
+    <p class="muted">GitHub authentication uses the GitHub CLI. Run <code>gh auth status</code> to check it.</p>
+  </section>
+</div>
+{% endblock %}

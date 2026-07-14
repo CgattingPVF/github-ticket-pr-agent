@@ -1,270 +1,28 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import socket
 import subprocess
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template_string, request
+from authlib.integrations.flask_client import OAuth
+from datetime import datetime, timedelta, timezone
 
-from core import make_branch_name
+from flask import Flask, jsonify, render_template, request, redirect, url_for, session
+
+from core import generate_test_plan, make_branch_name
 from config import Settings
-from prompts import investigation_prompt, review_prompt
+from prompts import all_in_one_prompt, investigation_prompt, review_prompt
 from store import JobStore
 from ticket_sync import import_workbook, sync_github
+from workflow import WorkflowRunner
 
-HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Ticket PR Agent</title>
-    <style>
-        :root { --ink:#f4f7ff; --muted:#8fa1be; --line:#28405f; --panel:#0d1d36; --panel-2:#09172c; --bg:#030b19; --blue:#4d9dff; --cyan:#4de6d2; --green:#65e2bd; }
-        * { box-sizing:border-box; }
-        body { margin:0; min-height:100vh; background:radial-gradient(circle at 82% 9%,#102c5f 0,transparent 24%),radial-gradient(circle at 18% 40%,#0c2c58 0,transparent 32%),linear-gradient(180deg,#040b18,#06152b 68%,#071a36); color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-        body:before { content:""; position:fixed; inset:0; pointer-events:none; opacity:.17; background-image:linear-gradient(#4a70a51a 1px,transparent 1px),linear-gradient(90deg,#4a70a51a 1px,transparent 1px); background-size:64px 64px; mask-image:linear-gradient(to bottom,#000,transparent 76%); }
-        .shell { position:relative; max-width:1480px; margin:0 auto; padding:0 46px 64px; }
-        .topbar { display:flex; align-items:center; justify-content:space-between; min-height:92px; border-bottom:1px solid #263d5d; margin-bottom:48px; }
-        .brand { display:flex; align-items:center; gap:11px; color:#fff; font-weight:750; letter-spacing:-.02em; font-size:17px; }
-        .brand-mark { display:grid; place-items:center; width:38px; height:38px; border:1px solid #7598ff99; border-radius:9px; color:#fff; background:linear-gradient(145deg,#1762c0,#6339c6); box-shadow:0 0 26px #326eff55,inset 0 1px #ffffff44; }
-        .topbar-badge { padding:9px 14px; border:1px solid #216a6488; border-radius:999px; color:#78e8cf; background:#0b302fbb; font-size:11px; font-weight:700; letter-spacing:.02em; }
-        .topbar-badge:before { content:"♙"; margin-right:7px; }
-        .hero { position:relative; min-height:265px; margin-bottom:30px; padding:4px 42% 20px 24px; }
-        .eyebrow { color:var(--cyan); font-size:11px; text-transform:uppercase; letter-spacing:.2em; font-weight:850; margin:0 0 23px; }
-        .eyebrow:after { content:""; display:inline-block; width:25px; height:2px; margin-left:13px; vertical-align:middle; background:var(--cyan); }
-        h1 { max-width:760px; margin:0; color:#f7f8fc; font-size:clamp(40px,4.4vw,66px); letter-spacing:-.045em; line-height:1.05; }
-        h1 span { color:var(--cyan); text-shadow:0 0 28px #3bd9ce55; }
-        .hero-copy { color:#a0aec4; font-size:15px; line-height:1.65; margin:21px 0 0; max-width:670px; }
-        .hero-art { position:absolute; right:3%; top:-8px; width:400px; height:270px; overflow:visible; filter:drop-shadow(0 18px 30px #00163f88); }
-        .hero-art:not(.hero-art-image) { display:none; }
-        .hero-art-image { object-fit:contain; filter:drop-shadow(0 18px 30px #00163f88); }
-        .hero-art .orbit { fill:none; stroke:#4589f2; stroke-width:1; opacity:.35; }
-        .hero-art .wire { fill:none; stroke:#3c85ed; stroke-width:1.2; stroke-linecap:round; opacity:.55; }
-        .hero-art .wire.ai { stroke:#4de6d2; opacity:.82; }
-        .hero-art .brain { fill:#eaf2ff0d; stroke:#dbe8ff; stroke-width:2.3; stroke-linecap:round; stroke-linejoin:round; }
-        .hero-art .brain-fold { fill:none; stroke:#b7ceff; stroke-width:1.5; stroke-linecap:round; opacity:.76; }
-        .hero-art .brain-fold.ai { stroke:#58e9d5; }
-        .hero-art .github { fill:#f7f9ff; }
-        .hero-art .node { fill:#d9ffff; stroke:#4de6d2; stroke-width:1.7; }
-        .layout { display:grid; grid-template-columns:minmax(0,1fr); gap:24px; align-items:start; }
-        .panel { background:linear-gradient(145deg,#10233fdd,#0a1931e8); border:1px solid #2d4769; border-radius:15px; box-shadow:0 26px 70px #00081966,inset 0 1px #ffffff09; overflow:hidden; }
-        .panel-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; padding:25px 28px 19px; }
-        .panel-title { display:flex; gap:14px; align-items:flex-start; }
-        .panel-icon { display:grid; place-items:center; flex:0 0 36px; height:36px; border:1px solid #526dff88; border-radius:9px; color:#d9e6ff; background:linear-gradient(145deg,#215aa5,#5732c2); box-shadow:0 0 20px #375ed044; }
-        h2 { margin:0; color:#f0f6ff; font-size:16px; letter-spacing:-.02em; }
-        .section-copy { color:var(--muted); font-size:12px; line-height:1.5; margin:5px 0 0; }
-        .panel-body { padding:0 28px 28px; }
-        .field { display:block; color:#aab8ce; font-size:11px; font-weight:750; letter-spacing:.04em; text-transform:uppercase; margin-bottom:16px; }
-        input { display:block; width:100%; margin-top:8px; padding:14px 15px; border:1px solid #2c496c; border-radius:7px; background:#07152aaa; color:#edf4ff; font:inherit; font-size:13px; outline:none; transition:border .15s,box-shadow .15s,background .15s; }
-        input::placeholder { color:#566982; }
-        input:focus { border-color:#4b9fff; box-shadow:0 0 0 3px #398cf52b, 0 0 22px #398cf514; background:#0a172b; }
-        select { display:block; width:100%; margin-top:8px; padding:12px 13px; border:1px solid #2c3e5c; border-radius:8px; background:#091323aa; color:#edf4ff; font:inherit; font-size:13px; outline:none; }
-        .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px 26px; }
-        .form-grid .wide { grid-column:1/-1; }
-        .actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:4px; }
-        .queue-actions { justify-content:flex-end; margin:-4px 0 18px; }
-        button { border:1px solid #335374; border-radius:7px; padding:11px 16px; background:#10213b; color:#b9c8dc; cursor:pointer; font:inherit; font-size:12px; font-weight:750; transition:transform .12s,border .12s,box-shadow .12s,background .12s; }
-        button:hover { transform:translateY(-1px); border-color:#5784b8; box-shadow:0 7px 18px #00000027; }
-        button.primary { color:#061326; border-color:#65d8ce; background:linear-gradient(135deg,#6de2d2,#55bff5); box-shadow:0 7px 20px #4bd6d02c; }
-        button.primary:hover { background:linear-gradient(135deg,#8aeee2,#70c8ff); }
-        button.subtle { color:#b9c8dc; background:#0f1d32; }
-        .sync-meta { color:#7487a4; font-size:11px; margin:-5px 0 0; }
-        #ticketStatus { min-height:14px; margin:5px 0 9px; color:var(--green); font-size:11px; font-weight:700; }
-        .job-status { min-height:22px; margin-top:18px; color:#9ab2d0; font-size:11px; line-height:1.5; }
-        .table-wrap { overflow-x:auto; border:1px solid #315071; border-radius:10px; }
-        table { width:100%; border-collapse:collapse; table-layout:auto; font-size:11px; }
-        th { padding:12px 12px; text-align:left; color:#8ca0be; background:#0a172b; border-bottom:1px solid #315071; border-right:1px solid #223b59; font-size:9px; text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; }
-        td { padding:10px 12px; border-bottom:1px solid #25415f; border-right:1px solid #223b59; vertical-align:middle; color:#9fb1c9; }
-        tr:last-child td { border-bottom:0; }
-        tr:hover td { background:#17294488; }
-        td:nth-child(2) { font-weight:800; color:var(--blue); }
-        td:nth-child(5) { min-width:250px; color:#e8f0fb; font-weight:600; }
-        td:nth-child(6), td:nth-child(7) { color:#8799b3; }
-        a { color:inherit; text-decoration:none; }
-        td:nth-child(2) a:hover { text-decoration:underline; }
-        .chip { display:inline-flex; align-items:center; min-height:25px; padding:4px 9px; border:1px solid #304b6b; border-radius:6px; color:#9fb2ca; background:#10223b; white-space:nowrap; }
-        .priority-p0,.priority-p1 { color:#ffdce3; border-color:#a5324e; background:#641d36aa; }
-        .priority-p2 { color:#ffeac0; border-color:#946b17; background:#5a400faa; }
-        .status-triage { color:#8be9db; border-color:#28756e; background:#164b4a88; }
-        .assignee { display:inline-flex; align-items:center; gap:7px; }
-        .avatar { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:linear-gradient(145deg,#435c85,#273955); color:#dbe8f9; font-size:9px; }
-        .use-ticket { padding:8px 11px; color:#79e7d3; border-color:#286d6b; background:#0b2535; white-space:nowrap; }
-        .output { display:none; background:#080f1d; color:#dbeafe; padding:20px; margin-top:20px; white-space:pre-wrap; border:1px solid #263b5c; border-radius:12px; overflow-y:auto; max-height:600px; font:12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; box-shadow:0 20px 50px #00000033; }
-        #copyBtn { margin-top:10px; }
-        .empty { color:var(--muted); text-align:center; padding:30px 15px; }
-        @media (max-width:900px) { .shell { padding:0 14px 44px; } .topbar { min-height:72px; margin-bottom:32px; } .hero { padding:0 4px 20px; min-height:0; } .hero-art { display:none; } .panel-head,.panel-body { padding-left:17px; padding-right:17px; } .form-grid { grid-template-columns:1fr; gap:0; } .form-grid .wide { grid-column:auto; } table { min-width:930px; } }
-    </style>
-</head>
-<body>
-<main class="shell">
-    <header class="topbar">
-        <div class="brand"><span class="brand-mark">✓</span> Ticket PR Agent</div>
-        <span class="topbar-badge">Human approval required</span>
-    </header>
-    <section class="hero">
-        <p class="eyebrow">GitHub issue triage → reviewed fix</p>
-        <h1>Turn the next important ticket into <span>progress.</span></h1>
-        <p class="hero-copy">Sync your GitHub queue, choose a ticket, and generate a focused investigation or review prompt with the right branch settings already in place.</p>
-        <svg class="hero-art" aria-hidden="true" viewBox="0 0 400 270" role="img">
-            <defs>
-                <linearGradient id="tileTop" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#335d9f"/><stop offset=".5" stop-color="#182d58"/><stop offset="1" stop-color="#102347"/></linearGradient>
-                <linearGradient id="tileEdge" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#3178ec"/><stop offset=".55" stop-color="#5135df"/><stop offset="1" stop-color="#162b75"/></linearGradient>
-                <radialGradient id="tileShine" cx="35%" cy="25%"><stop stop-color="#669dff" stop-opacity=".32"/><stop offset="1" stop-color="#16274b" stop-opacity="0"/></radialGradient>
-                <filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-            </defs>
-            <ellipse class="orbit" cx="200" cy="146" rx="174" ry="87" stroke-dasharray="5 10"/>
-            <ellipse class="orbit" cx="200" cy="147" rx="143" ry="66"/>
-            <path class="wire" d="M37 98h47l24 16M31 179h58l22-14M292 111l28-20h47M291 166l31 20h48"/>
-            <path class="wire ai" d="M55 68h32l19 17M315 70h27v-18h25"/>
-            <g filter="url(#glow)"><circle class="node" cx="37" cy="98" r="3.5"/><circle class="node" cx="31" cy="179" r="3.5"/><circle class="node" cx="367" cy="91" r="3.5"/><circle class="node" cx="370" cy="186" r="3.5"/><circle class="node" cx="55" cy="68" r="3"/><circle class="node" cx="367" cy="52" r="3"/></g>
-            <path d="M106 132l78-47q16-10 32 0l78 47q13 8 0 16l-78 47q-16 10-32 0l-78-47q-13-8 0-16z" fill="#172450" opacity=".85" transform="translate(0 22)"/>
-            <path d="M106 132l78-47q16-10 32 0l78 47q13 8 0 16l-78 47q-16 10-32 0l-78-47q-13-8 0-16z" fill="url(#tileEdge)" transform="translate(0 13)" stroke="#5a72ff" stroke-width="1"/>
-            <path d="M106 126l78-47q16-10 32 0l78 47q13 8 0 16l-78 47q-16 10-32 0l-78-47q-13-8 0-16z" fill="url(#tileTop)" stroke="#78a8ff" stroke-width="1.4"/>
-            <path d="M106 126l78-47q16-10 32 0l78 47q13 8 0 16l-78 47q-16 10-32 0l-78-47q-13-8 0-16z" fill="url(#tileShine)"/>
-            <g transform="translate(0 -2)">
-                <path class="brain" d="M199 98c-12-13-33-12-42 2-15-1-26 11-24 25-12 8-9 26 4 31 0 15 15 24 29 18 10 12 27 11 35 0 9 10 26 7 32-6 15 0 24-16 16-29 6-15-4-31-20-31-6-11-18-14-30-10z"/>
-                <path class="brain-fold" d="M194 103c-10 5-11 14-5 20-10 5-9 14-2 19-8 6-5 15 1 19M174 104c-9 4-12 12-7 19-9 4-10 13-3 19"/>
-                <path class="brain-fold ai" d="M207 103c10 5 12 14 6 21 9 4 10 13 4 19 7 6 4 14-2 18M226 111c8 5 8 14 2 20 7 6 4 14-3 18"/>
-                <g transform="translate(149 119) scale(.23)" class="github"><path d="M100 0C44.8 0 0 44.8 0 100c0 44.2 28.7 81.7 68.5 94.9 5 .9 6.8-2.2 6.8-4.8v-18.1c-27.9 6.1-33.8-13.5-33.8-13.5-4.5-11.6-11.1-14.7-11.1-14.7-9.1-6.2.7-6.1.7-6.1 10.1.7 15.4 10.4 15.4 10.4 9 15.4 23.6 11 29.3 8.4.9-6.5 3.5-11 6.4-13.5-22.3-2.5-45.8-11.1-45.8-49.3 0-10.9 3.9-19.8 10.4-26.8-.9-2.5-4.5-12.7 1-26.5 0 0 8.5-2.7 27.5 10.2 8-2.2 16.6-3.3 25.1-3.3 8.5 0 17.1 1.1 25.1 3.3 19-12.9 27.5-10.2 27.5-10.2 5.5 13.8 2 24 1 26.5 6.5 7 10.4 15.9 10.4 26.8 0 38.3-23.5 46.8-45.9 49.3 3.6 3.1 6.8 9.2 6.8 18.6v27.5c0 2.7 1.8 5.8 6.8 4.8C171.3 181.7 200 144.2 200 100 200 44.8 155.2 0 100 0z"/></g>
-                <path class="wire ai" d="M210 127l8-7 9 8 8-7M218 120v-7M227 128v9M235 121h8"/>
-                <circle class="node" cx="218" cy="113" r="2.5"/><circle class="node" cx="227" cy="137" r="2.5"/><circle class="node" cx="243" cy="121" r="2.5"/>
-            </g>
-        </svg>
-        <img class="hero-art hero-art-image" src="/static/hero-fusion.svg" alt="GitHub collaboration merging with AI automation" />
-    </section>
 
-    <div class="layout">
-    <section class="panel">
-      <div class="panel-head"><div class="panel-title"><span class="panel-icon">⌛</span><div><h2>Ticket queue</h2><p class="section-copy">Top 20 actionable tickets ranked by priority and urgency.</p></div></div><button class="subtle" onclick="loadTickets()">↻ &nbsp; Refresh</button></div>
-      <div class="panel-body">
-        <label class="field">Repository
-          <input type="text" id="repository" value="pvfscaffolding/crm-staff-desktop" placeholder="owner/repository">
-        </label>
-        <p class="sync-meta">GitHub is the source of truth. Priority is read from P0/P1/P2 labels.</p>
-        <div class="actions queue-actions"><button class="primary" onclick="syncGithub()">↻ &nbsp; Sync GitHub issues</button></div>
-        <div id="ticketStatus"></div>
-        <div class="table-wrap"><div id="ticketQueue"></div></div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-head"><div class="panel-title"><span class="panel-icon">▣</span><div><h2>Selected ticket</h2><p class="section-copy">Choose a ticket from the queue or paste a GitHub issue URL.</p></div></div></div>
-      <div class="panel-body">
-        <div class="form-grid">
-        <label class="field wide">Issue URL
-          <input type="text" id="issueUrl" placeholder="https://github.com/owner/repo/issues/123">
-        </label>
-        <label class="field">Base branch
-          <input type="text" id="baseBranch" value="develop">
-        </label>
-        <label class="field">Branch prefix
-          <input type="text" id="branchPrefix" value="bug-fix">
-        </label>
-        </div>
-        <div class="actions">
-          <button class="primary" onclick="generateInvestigation()">⌁ &nbsp; Investigation prompt</button>
-          <button class="subtle" onclick="generateReview()">◯ &nbsp; Review prompt</button>
-        </div>
-      </div>
-    </section>
-    </div>
-
-    <div id="output" class="output"></div>
-    <button id="copyBtn" class="subtle" onclick="copyOutput()" style="display:none;">Copy prompt</button>
-</main>
-
-    <script>
-        async function generateInvestigation() {
-            try {
-                const issueUrl = document.getElementById('issueUrl').value.trim();
-                const baseBranch = document.getElementById('baseBranch').value.trim();
-                const branchPrefix = document.getElementById('branchPrefix').value.trim();
-
-                if (!issueUrl) throw new Error('Issue URL required');
-
-                const res = await fetch('/prompt/investigation', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({issue_url: issueUrl, base_branch: baseBranch, branch_prefix: branchPrefix})
-                });
-                const data = await res.json();
-                showOutput(data.prompt || data.error);
-            } catch (e) {
-                showOutput(`Error: ${e.message}`);
-            }
-        }
-
-        async function generateReview() {
-            try {
-                const issueUrl = document.getElementById('issueUrl').value.trim();
-                const baseBranch = document.getElementById('baseBranch').value.trim();
-
-                if (!issueUrl) throw new Error('Issue URL required');
-
-                const res = await fetch('/prompt/review', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({issue_url: issueUrl, base_branch: baseBranch})
-                });
-                const data = await res.json();
-                showOutput(data.prompt || data.error);
-            } catch (e) {
-                showOutput(`Error: ${e.message}`);
-            }
-        }
-
-        function showOutput(text) {
-            const output = document.getElementById('output');
-            const copyBtn = document.getElementById('copyBtn');
-            output.textContent = text;
-            output.style.display = 'block';
-            copyBtn.style.display = 'block';
-            output.scrollIntoView({behavior: 'smooth'});
-        }
-
-        function copyOutput() {
-            const output = document.getElementById('output');
-            const text = output.textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                const btn = document.getElementById('copyBtn');
-                const original = btn.textContent;
-                btn.textContent = 'Copied!';
-                setTimeout(() => {
-                    btn.textContent = original;
-                }, 2000);
-            }).catch(err => {
-                alert('Failed to copy: ' + err);
-            });
-        }
-
-        async function syncGithub() {
-            const res = await fetch('/tickets/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({repository:document.getElementById('repository').value})});
-            const data = await res.json(); document.getElementById('ticketStatus').textContent = data.error || ('Synced ' + data.count + ' tickets'); loadTickets();
-        }
-        async function loadTickets() {
-            const res = await fetch('/tickets'); const data = await res.json();
-            document.getElementById('ticketQueue').innerHTML = '<table><tr><th>Rank</th><th>Ticket number</th><th>Priority</th><th>Status</th><th>Title</th><th>Assigned</th><th>Labels</th><th>Updated</th><th></th></tr>' + data.tickets.map((t, i) => {
-                const priority = String(t.priority || '—');
-                const status = String(t.project_status || 'Backlog');
-                const assignee = String(t.assignees || 'Unassigned');
-                const initial = assignee === 'Unassigned' ? '—' : assignee.charAt(0).toUpperCase();
-                const statusClass = status.toLowerCase().includes('triage') ? ' status-triage' : '';
-                return '<tr><td>'+(i+1)+'</td><td><a href="'+t.url+'" target="_blank">#'+t.number+'</a></td><td><span class="chip priority-'+priority.toLowerCase()+'">'+priority+'</span></td><td><span class="chip'+statusClass+'">'+status+'</span></td><td>'+t.title+'</td><td><span class="assignee"><span class="avatar">'+initial+'</span>'+assignee+'</span></td><td><span class="chip">'+(t.labels || '—')+'</span></td><td>'+String(t.updated_at||'').slice(0,10)+'</td><td><button class="use-ticket" data-ticket-url="'+encodeURIComponent(t.url)+'">Use ticket&nbsp; ›</button></td></tr>';
-            }).join('') + '</table>';
-            document.querySelectorAll('.use-ticket').forEach(button => button.addEventListener('click', () => useTicket(decodeURIComponent(button.dataset.ticketUrl))));
-        }
-        function useTicket(url) {
-            document.getElementById('issueUrl').value = url;
-            document.getElementById('issueUrl').scrollIntoView({behavior:'smooth', block:'center'});
-            document.getElementById('issueUrl').focus();
-            document.getElementById('ticketStatus').textContent = 'Selected ticket: ' + url;
-        }
-        loadTickets();
-    </script>
-</body>
-</html>
-"""
+def get_github_token():
+    """Get GitHub token from session or environment."""
+    return session.get('github_token') or os.getenv('GH_TOKEN')
 
 
 def find_available_port(start_port: int = 3060, max_attempts: int = 100) -> int:
@@ -282,11 +40,16 @@ def find_available_port(start_port: int = 3060, max_attempts: int = 100) -> int:
 def fetch_issue_from_github(issue_url: str) -> dict:
     repo, issue_num = parse_github_url(issue_url)
     try:
+        env = os.environ.copy()
+        token = get_github_token()
+        if token:
+            env['GH_TOKEN'] = token
         result = subprocess.run(
             ["gh", "api", f"repos/{repo}/issues/{issue_num}"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
+            env=env
         )
         if result.returncode != 0:
             stderr = result.stderr.strip() if result.stderr else ""
@@ -316,16 +79,324 @@ def parse_github_url(url: str) -> tuple[str, str]:
     except (ValueError, IndexError):
         raise ValueError(f"Invalid GitHub issue URL format: {url}")
 
+def fetch_repository_prs(repository: str) -> list[dict]:
+    token = get_github_token()
+    result = subprocess.run(['gh', 'api', f'repos/{repository}/pulls?state=all&per_page=100&sort=updated&direction=desc'], capture_output=True, text=True, timeout=20, env={**os.environ, **({'GH_TOKEN': token} if token else {})})
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f'Unable to read pull requests for {repository}')
+    now = datetime.now(timezone.utc)
+    prs = []
+    for pr in json.loads(result.stdout):
+        created = datetime.fromisoformat(pr['created_at'].replace('Z', '+00:00'))
+        end = pr.get('merged_at') or pr.get('closed_at')
+        finished = datetime.fromisoformat(end.replace('Z', '+00:00')) if end else now
+        seconds = max(0, int((finished - created).total_seconds()))
+        prs.append({**pr, 'repository': repository, 'cycle_seconds': seconds, 'cycle_time': f'{seconds // 3600:02d}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}', 'state_label': 'merged' if pr.get('merged_at') else pr.get('state', 'open')})
+    return prs
+
+
+# The garage: each tier is a French car you unlock as you level up. `rate` is the
+# francs-per-hour every car of that tier idles at — the higher the tier, the fatter
+# the passive income. ponytail: flat per-tier rate, add per-car upgrades if it gets stale.
+GARAGE = [
+    {'name': 'Citroën 2CV', 'emoji': '🚗', 'rate': 5},
+    {'name': 'Renault 4', 'emoji': '🚙', 'rate': 12},
+    {'name': 'Peugeot 205 GTI', 'emoji': '🏎️', 'rate': 25},
+    {'name': 'Renault 5 Turbo', 'emoji': '🚘', 'rate': 45},
+    {'name': 'Citroën DS', 'emoji': '🛸', 'rate': 80},
+    {'name': 'Alpine A110', 'emoji': '🏁', 'rate': 140},
+    {'name': 'Bugatti Type 35', 'emoji': '🏆', 'rate': 240},
+    {'name': 'Bugatti Chiron', 'emoji': '👑', 'rate': 400},
+]
+XP_PER_LEVEL = 400
+XP_COMPLETED = 120
+XP_INTEL = 20
+
+
+def player_stats(jobs: list[dict]) -> dict:
+    """Derive the garage HUD (level, current car, idle francs, streak, achievements)."""
+    completed = [j for j in jobs if j['status'] == 'completed']
+    failed = [j for j in jobs if j['status'] == 'failed']
+    xp = len(completed) * XP_COMPLETED + len(failed) * XP_INTEL
+    level = 1 + xp // XP_PER_LEVEL
+    car = GARAGE[min(level - 1, len(GARAGE) - 1)]
+    next_car = GARAGE[level] if level < len(GARAGE) else None
+    rank = car['name']
+
+    # Idle earnings: every merged PR is a car that's been earning francs since it merged.
+    now = datetime.now(timezone.utc)
+    banked = 0.0
+    for j in completed:
+        ts = j.get('updated_at')
+        if not ts:
+            continue
+        try:
+            merged = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+            if merged.tzinfo is None:
+                merged = merged.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        hours = max(0.0, (now - merged).total_seconds() / 3600)
+        banked += car['rate'] * hours
+    fleet_size = len(completed)
+    franc_rate = fleet_size * car['rate']  # francs per hour, whole fleet
+
+    days = {j['updated_at'][:10] for j in completed if j.get('updated_at')}
+    streak, day = 0, datetime.now(timezone.utc).date()
+    if day.isoformat() not in days:
+        day -= timedelta(days=1)  # a streak survives until the end of today
+    while day.isoformat() in days:
+        streak += 1
+        day -= timedelta(days=1)
+
+    def flawless(job):
+        review = (job.get('result') or {}).get('review') or {}
+        return not review.get('findings')
+
+    comeback = any(
+        c['created_at'] > f['created_at'] for c in completed for f in failed
+    )
+    achievements = [
+        {'icon': '🎉', 'name': 'First merge', 'desc': 'Complete your first mission', 'unlocked': len(completed) >= 1},
+        {'icon': '🎩', 'name': 'Hat trick', 'desc': 'Complete 3 missions', 'unlocked': len(completed) >= 3},
+        {'icon': '⚔️', 'name': 'Bug slayer', 'desc': 'Complete 10 missions', 'unlocked': len(completed) >= 10},
+        {'icon': '✨', 'name': 'Flawless victory', 'desc': 'Ship a fix with zero review findings', 'unlocked': any(flawless(j) for j in completed)},
+        {'icon': '🔥', 'name': 'On a roll', 'desc': 'Complete missions 3 days in a row', 'unlocked': streak >= 3},
+        {'icon': '🧠', 'name': 'Field scientist', 'desc': 'Turn 5 failures into documented intel', 'unlocked': len(failed) >= 5},
+        {'icon': '💪', 'name': 'Comeback', 'desc': 'Complete a mission after a failed run', 'unlocked': comeback},
+    ]
+    return {
+        'xp': xp,
+        'level': level,
+        'rank': rank,
+        'car': car,
+        'next_car': next_car,
+        'garage': [{**c, 'unlocked': i < level} for i, c in enumerate(GARAGE)],
+        'fleet_size': fleet_size,
+        'franc_rate': franc_rate,
+        'francs_banked': round(banked),
+        'streak': streak,
+        'xp_into_level': xp % XP_PER_LEVEL,
+        'xp_per_level': XP_PER_LEVEL,
+        'progress_pct': round((xp % XP_PER_LEVEL) / XP_PER_LEVEL * 100),
+        'completed': len(completed),
+        'failed': len(failed),
+        'achievements': achievements,
+        'unlocked_count': sum(1 for a in achievements if a['unlocked']),
+    }
+
 
 app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', 'dev-only-change-me')
 settings = Settings()
 settings.ensure_directories()
 store = JobStore(settings.database_path)
+runner = WorkflowRunner(settings, store)
+
+oauth = OAuth(app)
+github = oauth.register(
+    name='github',
+    client_id=os.getenv('GITHUB_CLIENT_ID', ''),
+    client_secret=os.getenv('GITHUB_CLIENT_SECRET', ''),
+    access_token_url='https://github.com/login/oauth/access_token',
+    access_token_params=None,
+    authorize_url='https://github.com/login/oauth/authorize',
+    authorize_params=None,
+    api_base_url='https://api.github.com/',
+    client_kwargs={'scope': 'repo public_repo'},
+)
+
+
+@app.get('/login')
+def login():
+    client_id = os.getenv('GITHUB_CLIENT_ID', '')
+    # Local development commonly has GitHub CLI authentication but no OAuth app.
+    # Reuse that identity instead of sending a placeholder client id to GitHub.
+    if not client_id or client_id in {'your-client-id-here', 'change-me'}:
+        try:
+            token = subprocess.run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=5)
+            if token.returncode == 0 and token.stdout.strip():
+                access_token = token.stdout.strip()
+                profile = subprocess.run(['gh', 'api', 'user'], capture_output=True, text=True, timeout=10, env={**os.environ, 'GH_TOKEN': access_token})
+                if profile.returncode == 0:
+                    user = json.loads(profile.stdout)
+                    session['github_token'] = access_token
+                    session['github_login'] = user.get('login')
+                    store.upsert_player(user.get('login', ''), user.get('name') or user.get('login', ''), user.get('avatar_url', ''))
+                    return redirect(url_for('leaderboard_page'))
+        except Exception:
+            pass
+        return redirect(url_for('prompts_page'))
+    if client_id:
+        return github.authorize_redirect(url_for('auth_callback', _external=True))
+    return redirect(url_for('prompts_page'))
+
+
+@app.get('/auth/callback')
+def auth_callback():
+    try:
+        token = github.authorize_access_token()
+        session['github_token'] = token.get('access_token')
+        token_value = token.get('access_token')
+        profile = subprocess.run(['gh', 'api', 'user'], capture_output=True, text=True, timeout=10, env={**os.environ, 'GH_TOKEN': token_value})
+        if profile.returncode == 0:
+            user = json.loads(profile.stdout)
+            session['github_login'] = user.get('login')
+            store.upsert_player(user.get('login', ''), user.get('name') or user.get('login', ''), user.get('avatar_url', ''))
+        return redirect(url_for('prompts_page'))
+    except Exception:
+        return redirect(url_for('prompts_page'))
+
+
+@app.get('/logout')
+def logout():
+    session.pop('github_token', None)
+    session.pop('github_login', None)
+    return redirect(url_for('prompts_page'))
+
+
+@app.get('/api/user')
+def api_user():
+    token = get_github_token()
+    if not token:
+        return jsonify({'login': None}), 401
+    try:
+        result = subprocess.run(
+            ["gh", "api", "user"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, 'GH_TOKEN': token}
+        )
+        if result.returncode == 0:
+            return jsonify(json.loads(result.stdout))
+        return jsonify({'login': None}), 401
+    except Exception:
+        return jsonify({'login': None}), 401
+
+
+@app.get('/jobs')
+def index():
+    jobs = store.list(limit=500)
+    return render_template('index.html', jobs=jobs, tickets=store.list_tickets(limit=500), defaults=settings, player=player_stats(jobs))
+
+@app.get('/leaderboard')
+def leaderboard_page():
+    jobs = store.list(limit=500)
+    current = player_stats([j for j in jobs if j.get('github_login') == session.get('github_login')])
+    repositories = sorted({parse_github_url(j['issue_url'])[0] for j in jobs if j.get('issue_url')})
+    repository = request.args.get('repository') or (repositories[0] if repositories else '')
+    prs, prs_error = [], None
+    if repository:
+        try: prs = fetch_repository_prs(repository)
+        except Exception as exc: prs_error = str(exc)
+    authors = {}
+    for pr in prs:
+        author = pr.get('user', {}).get('login', 'unknown')
+        item = authors.setdefault(author, {'author': author, 'prs': 0, 'merged': 0, 'open': 0, 'closed': 0, 'additions': 0, 'deletions': 0, 'total_seconds': 0})
+        item['prs'] += 1; item[pr['state_label']] = item.get(pr['state_label'], 0) + 1
+        item['merged'] += 1 if pr['state_label'] == 'merged' else 0
+        item['additions'] += pr.get('additions', 0); item['deletions'] += pr.get('deletions', 0); item['total_seconds'] += pr['cycle_seconds']
+    author_stats = sorted(authors.values(), key=lambda x: (-x['merged'], -x['prs'], x['total_seconds']))
+    fastest_prs = sorted(prs, key=lambda x: x['cycle_seconds'])[:10]
+    stats = {'total': len(prs), 'merged': sum(p['state_label'] == 'merged' for p in prs), 'open': sum(p['state_label'] == 'open' for p in prs), 'closed': sum(p['state_label'] == 'closed' for p in prs), 'additions': sum(p.get('additions', 0) for p in prs), 'deletions': sum(p.get('deletions', 0) for p in prs)}
+    return render_template('leaderboard.html', leaderboard=store.leaderboard(), player=current, github_login=session.get('github_login'), repositories=repositories, repository=repository, prs=prs, author_stats=author_stats, fastest_prs=fastest_prs, stats=stats, prs_error=prs_error)
+
+@app.get('/settings')
+def settings_page():
+    return render_template('settings.html', settings=settings)
+
+
+@app.post('/jobs')
+def create_job():
+    form = request.form
+    parameters = {
+        'issue_url': form.get('issue_url', '').strip(),
+        'base_branch': form.get('base_branch', 'develop').strip(),
+        'branch_prefix': form.get('branch_prefix', 'bug-fix').strip(),
+        'agent_command': form.get('agent_command', '').strip(),
+        'review_command': form.get('review_command', '').strip(),
+        'agent_provider': form.get('agent_provider', 'codex'),
+        'review_provider': form.get('review_provider', 'codex'),
+        'validation_commands': form.get('validation_commands', ''),
+        'close_issue_on_merge': form.get('close_issue_on_merge') == 'on',
+        'comment_on_failure': form.get('comment_on_failure') == 'on',
+        'approval_mode': 'each_stage' if form.get('workflow_profile') == 'manual' else form.get('approval_mode', 'auto'),
+        'workflow_profile': form.get('workflow_profile', 'full_pr'),
+        'github_login': session.get('github_login'),
+    }
+    if not parameters['issue_url']:
+        jobs = store.list(limit=500)
+        return render_template('index.html', jobs=jobs, tickets=store.list_tickets(limit=500), defaults=settings, player=player_stats(jobs), form=form, form_error='Issue URL required'), 400
+    job_id = store.create(parameters)
+    runner.start(job_id)
+    return redirect(url_for('job_detail', job_id=job_id))
+
+
+@app.get('/jobs/<job_id>')
+def job_detail(job_id):
+    job = store.get(job_id)
+    if not job:
+        return 'Job not found', 404
+    return render_template('job.html', job=job)
+
+
+@app.get('/api/jobs/<job_id>')
+def api_job(job_id):
+    job = store.get(job_id)
+    return (jsonify(job), 200) if job else (jsonify({'error': 'Job not found'}), 404)
+
+
+@app.post('/api/jobs/<job_id>/approval')
+def job_approval(job_id):
+    action = request.json.get('action', '')
+    if action not in {'approve', 'reject'}:
+        return jsonify({'error': 'action must be approve or reject'}), 400
+    if not store.get(job_id):
+        return jsonify({'error': 'Job not found'}), 404
+    store.update(job_id, approval_state='approved' if action == 'approve' else 'rejected')
+    return jsonify(store.get(job_id))
+
+
+@app.post('/api/jobs/<job_id>/cancel')
+def cancel_job(job_id):
+    if not store.get(job_id):
+        return jsonify({'error': 'Job not found'}), 404
+    store.update(job_id, status='cancelled', approval_state='rejected', error='Cancelled by user')
+    return jsonify(store.get(job_id))
+
+
+@app.post('/api/jobs/<job_id>/stop')
+def stop_job(job_id):
+    job = store.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    if job['status'] in {'completed', 'failed', 'cancelled', 'stopped', 'closed'}:
+        return jsonify({'error': 'Job is already finished'}), 409
+    store.stop(job_id)
+    return jsonify(store.get(job_id))
+
+
+@app.post('/api/jobs/<job_id>/close')
+def close_job(job_id):
+    job = store.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    if job['status'] in {'queued', 'running', 'waiting_approval'}:
+        return jsonify({'error': 'Stop the job before closing it'}), 409
+    store.update(job_id, status='closed')
+    store.append_log(job_id, 'Job closed by user.')
+    return jsonify(store.get(job_id))
 
 
 @app.get("/")
 def root():
-    return render_template_string(HTML)
+    return redirect(url_for("index"))
+
+
+@app.get("/prompts")
+def prompts_page():
+    return render_template('prompts.html')
 
 
 @app.get('/tickets')
@@ -346,11 +417,35 @@ def import_tickets():
         return jsonify({'error': str(exc)}), 400
 
 
+@app.post('/tickets/test-plan')
+def ticket_test_plan():
+    key = request.json.get('key', '').strip()
+    issue_url = request.json.get('issue_url', '').strip()
+    if not key or not issue_url:
+        return jsonify({'error': 'key and issue_url required'}), 400
+    cached = store.get_ticket_test(key)
+    if cached:
+        return jsonify(cached)
+    try:
+        issue = fetch_issue_from_github(issue_url)
+        safe_name = re.sub(r'[^A-Za-z0-9]+', '-', key)
+        plan = generate_test_plan(
+            settings.agent_command, settings.workspace_root, issue,
+            settings.workspace_root / f'test-plan-{safe_name}.json',
+            settings.review_timeout_seconds,
+        )
+        store.upsert_ticket_test(key, plan['repro_steps'], plan['pass_steps'])
+        return jsonify(plan)
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
 @app.post('/tickets/sync')
 def sync_tickets():
     try:
         repository = request.json.get('repository', '').strip()
-        synced = sync_github(repository)
+        token = get_github_token()
+        synced = sync_github(repository, token=token)
         store.prune_repository_tickets(repository, [ticket['key'] for ticket in synced])
         store.upsert_tickets(synced)
         return jsonify({'count': len(synced)})
@@ -388,6 +483,21 @@ def generate_review_prompt():
         issue = fetch_issue_from_github(issue_url)
         prompt = review_prompt(issue, base_branch)
         return jsonify({"prompt": prompt})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.post("/prompt/all-in-one")
+def generate_all_in_one_prompt():
+    issue_url = request.json.get("issue_url", "").strip()
+    base_branch = request.json.get("base_branch", "develop").strip()
+    branch_prefix = request.json.get("branch_prefix", "bug-fix").strip()
+    if not issue_url:
+        return jsonify({"error": "issue_url required"}), 400
+    try:
+        issue = fetch_issue_from_github(issue_url)
+        branch_name = make_branch_name(branch_prefix, issue.get("number"), issue.get("title", ""))
+        return jsonify({"prompt": all_in_one_prompt(issue, base_branch, branch_name)})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 

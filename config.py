@@ -31,11 +31,19 @@ class Settings:
         "REVIEW_COMMAND",
         "codex exec --sandbox workspace-write --ask-for-approval never -",
     )
+    claude_command: str = os.getenv(
+        "CLAUDE_COMMAND",
+        "claude -p --output-format stream-json --verbose --dangerously-skip-permissions",
+    )
     command_timeout_seconds: int = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "3600"))
+    review_timeout_seconds: int = int(os.getenv("REVIEW_TIMEOUT_SECONDS", "120"))
     minimum_confidence: float = float(os.getenv("MINIMUM_CONFIDENCE", "0.90"))
-    max_repair_cycles: int = int(os.getenv("MAX_REPAIR_CYCLES", "1"))
+    max_repair_cycles: int = int(os.getenv("MAX_REPAIR_CYCLES", "0"))
+    max_gate_attempts: int = int(os.getenv("MAX_GATE_ATTEMPTS", "6"))
     close_issue_on_merge: bool = _bool("CLOSE_ISSUE_ON_MERGE", False)
+    comment_on_failure: bool = _bool("COMMENT_ON_FAILURE", False)
     editor_command: str = os.getenv("EDITOR_COMMAND", "code --reuse-window")
+    local_repo_path: Path | None = Path(os.getenv("LOCAL_REPO_PATH")).resolve() if os.getenv("LOCAL_REPO_PATH") else None
 
     @property
     def database_path(self) -> Path:

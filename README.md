@@ -20,7 +20,7 @@ No program can honestly guarantee a fix is “100% correct.” This application 
 - Python 3.10+
 - `git`
 - GitHub CLI `gh`, already authenticated with access to the target repositories
-- Codex CLI by default, already authenticated
+- Codex CLI by default, already authenticated (Claude Code CLI also works, see below)
 - A clean, isolated machine or container is strongly recommended. The coding agent reads and executes repository code.
 
 Check authentication:
@@ -31,6 +31,8 @@ codex login
 ```
 
 The GitHub token used by `gh` needs enough repository access to read issues and code, push branches, create pull requests, and create issue/PR comments or reviews.
+
+Enable **Comment on the ticket automatically when the job fails** when starting a job to post the failed stage, blocker, and next steps on the original issue. Set `COMMENT_ON_FAILURE=true` to enable this option by default. Failure reporting is best-effort and never replaces the job's original error.
 
 ## Start on Windows PowerShell
 
@@ -43,7 +45,7 @@ Open `http://127.0.0.1:3060`.
 
 ## Run a ticket from the dashboard
 
-Select a ticket and generate an investigation or review prompt.
+Select a ticket and generate an investigation, review, or all-in-one prompt. The all-in-one prompt runs the complete workflow conversationally and requires an explicit yes/no confirmation before each stage, including edits, validation, GitHub actions, and PR creation.
 
 Codex is used for ticket execution:
 
@@ -93,7 +95,7 @@ The default command is:
 codex exec --sandbox workspace-write --ask-for-approval never -
 ```
 
-The application passes the generated prompt over stdin and runs Codex with the cloned repository as its working directory. `workspace-write` allows edits only inside the workspace and avoids the deprecated `--full-auto` compatibility flag.
+The application passes the generated prompt over stdin. For a local `CRM_APP_PVF` workspace, Codex runs from the workspace root and can coordinate changes across `crm-staff-desktop` and `crm-api`; each changed repository is validated, reviewed, committed, pushed, and submitted as a separate linked PR. Other tickets retain the single-repository workflow. `workspace-write` allows edits only inside the selected workspace and avoids the deprecated `--full-auto` compatibility flag.
 
 You can replace both commands in the web form or environment variables. Any replacement command must:
 
@@ -102,6 +104,18 @@ You can replace both commands in the web form or environment variables. Any repl
 - Make source edits in the current working directory for the coding pass.
 - Create `.ticket-agent/result.json` for the coding pass.
 - Create `.ticket-agent/review.json` for the review pass.
+
+## Using Claude Code instead of (or alongside) Codex
+
+The agent and review commands are independent, so each can point at a different CLI. To use Claude Code for the coding pass:
+
+```text
+AGENT_COMMAND=claude -p --output-format text --dangerously-skip-permissions
+```
+
+To mix both — e.g. Codex writes the fix, Claude reviews it — set `AGENT_COMMAND` to the Codex command and `REVIEW_COMMAND` to the Claude command (or the reverse), either via `.env` or per-job in the web form. Run `claude login` (or `claude setup-token`) once to authenticate, same as `codex login`.
+
+The Advanced loadout now exposes Codex, Claude Code, and Custom command independently for coding and review. Claude uses `CLAUDE_COMMAND` and receives the same stdin prompts and `.ticket-agent` JSON contract, so investigation, confidence gates, validation, review, repair cycles, and PR creation are available with Claude as either pass or both passes.
 
 ## Validation commands
 

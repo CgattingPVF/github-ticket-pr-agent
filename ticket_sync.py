@@ -54,7 +54,7 @@ def find_gh_executable() -> str:
     )
 
 
-def _run_gh(arguments: list[str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
+def _run_gh(arguments: list[str], timeout: int = 60, token: str | None = None) -> subprocess.CompletedProcess[str]:
     kwargs: dict[str, object] = {
         'capture_output': True,
         'text': True,
@@ -63,8 +63,12 @@ def _run_gh(arguments: list[str], timeout: int = 60) -> subprocess.CompletedProc
     if os.name == 'nt':
         kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
+    env = os.environ.copy()
+    if token:
+        env['GH_TOKEN'] = token
+
     try:
-        return subprocess.run([find_gh_executable(), *arguments], **kwargs)
+        return subprocess.run([find_gh_executable(), *arguments], **kwargs, env=env)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError('GitHub CLI request timed out. Check your connection and try again.') from exc
     except OSError as exc:
@@ -100,6 +104,36 @@ def _github_api_error(repository: str, result: subprocess.CompletedProcess[str])
     return RuntimeError(f'GitHub issue sync failed: {details}')
 
 
+def _project_metadata(repository: str, issue_numbers: list[int], token: str | None) -> dict[int, dict[str, str]]:
+    """Read GitHub Projects v2 priority and status fields in small GraphQL batches."""
+    owner, name = repository.split('/', 1)
+    metadata: dict[int, dict[str, str]] = {}
+    for start in range(0, len(issue_numbers), 20):
+        numbers = issue_numbers[start:start + 20]
+        fields = ' '.join(
+            f'i{number}: issue(number: {number}) {{ projectItems(first: 10) {{ nodes {{ fieldValues(first: 30) {{ nodes {{ ... on ProjectV2ItemFieldSingleSelectValue {{ name field {{ ... on ProjectV2SingleSelectField {{ name }} }} }} }} }} }} }} }}'
+            for number in numbers
+        )
+        result = _run_gh(['api', 'graphql', '-f', f'query=query {{ repository(owner: "{owner}", name: "{name}") {{ {fields} }} }}'], token=token)
+        if result.returncode:
+            continue
+        try:
+            data = json.loads(result.stdout)['data']['repository']
+            for number in numbers:
+                for item in (data.get(f'i{number}') or {}).get('projectItems', {}).get('nodes', []):
+                    for value in item.get('fieldValues', {}).get('nodes', []):
+                        field_name = value.get('field', {}).get('name')
+                        if field_name in {'Project Priority', 'Priority'}:
+                            priority = _priority(value.get('name'))
+                            if priority:
+                                metadata.setdefault(number, {})['priority'] = priority
+                        elif field_name in {'Project Status', 'Status'} and value.get('name'):
+                            metadata.setdefault(number, {})['project_status'] = _text(value.get('name'))
+        except (KeyError, TypeError, json.JSONDecodeError):
+            continue
+    return metadata
+
+
 def import_workbook(path: Path) -> list[dict]:
     workbook = load_workbook(path, read_only=True, data_only=True)
     sheet = workbook[workbook.sheetnames[0]]
@@ -133,7 +167,7 @@ def import_workbook(path: Path) -> list[dict]:
     return tickets
 
 
-def sync_github(repository: str = '', state: str = 'open', limit: int = 100) -> list[dict]:
+def sync_github(repository: str = '', state: str = 'open', limit: int = 100, token: str | None = None) -> list[dict]:
     repository = repository.strip()
     if repository and not _REPOSITORY_PATTERN.fullmatch(repository):
         raise ValueError('Repository must use the `owner/repository` format.')
@@ -143,7 +177,7 @@ def sync_github(repository: str = '', state: str = 'open', limit: int = 100) -> 
         if repository
         else f'search/issues?q=state:{state}+is:issue&per_page={min(limit, 100)}'
     )
-    result = _run_gh(['api', endpoint])
+    result = _run_gh(['api', endpoint], token=token)
     if result.returncode:
         raise _github_api_error(repository, result)
 
@@ -153,18 +187,20 @@ def sync_github(repository: str = '', state: str = 'open', limit: int = 100) -> 
         raise RuntimeError(f'GitHub returned invalid JSON: {exc}') from exc
 
     items = payload.get('items', []) if isinstance(payload, dict) else payload
+    project_metadata = _project_metadata(repository, [issue['number'] for issue in items], token) if repository else {}
     now = datetime.now(timezone.utc).isoformat()
     tickets = []
     for issue in items:
         repo = issue.get('repository', {}).get('full_name', repository) if isinstance(issue, dict) else repository
         labels = ', '.join(label.get('name', '') for label in issue.get('labels', []))
         label_names = {label.get('name', '').upper() for label in issue.get('labels', [])}
-        priority = next((value for value in ('P0', 'P1', 'P2') if value in label_names), '')
+        metadata = project_metadata.get(issue['number'], {})
+        priority = metadata.get('priority') or next((value for value in ('P0', 'P1', 'P2') if value in label_names), '')
         assignees = ', '.join(person.get('login', '') for person in issue.get('assignees', []))
         tickets.append({'key': f'{repo}#{issue["number"]}', 'repository': repo, 'number': issue['number'],
                         'url': issue.get('html_url', ''), 'title': issue.get('title', ''),
                         'state': issue.get('state', 'open').upper(), 'labels': labels, 'assignees': assignees,
-                        'priority': priority, 'project_status': '', 'issue_type': 'Issue',
+                        'priority': priority, 'project_status': metadata.get('project_status', ''), 'issue_type': 'Issue',
                         'created_at': issue.get('created_at', ''), 'updated_at': issue.get('updated_at', ''),
                         'synced_at': now, 'source': 'github'})
     return tickets
