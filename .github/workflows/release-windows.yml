@@ -11,6 +11,7 @@ on:
       - 'requirements-build.txt'
       - 'build-windows.ps1'
       - 'pyinstaller-hooks/**'
+      - 'scripts/fetch-gh.ps1'
       - 'templates/**'
       - 'static/**'
       - 'tests/**'
@@ -100,12 +101,17 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+      - name: Download verified GitHub CLI
+        shell: pwsh
+        run: .\scripts\fetch-gh.ps1 -Destination .\vendor
+
       - name: Build executable
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
             --name ticket-pr-agent `
             --additional-hooks-dir "pyinstaller-hooks" `
+            --add-binary "vendor\gh.exe;." `
             --add-data "templates;templates" `
             --add-data "static;static" `
             launcher.py
@@ -124,6 +130,11 @@ jobs:
               try {
                 $response = Invoke-WebRequest -Uri "http://127.0.0.1:3060/" -UseBasicParsing -TimeoutSec 2
                 if ($response.StatusCode -eq 200) {
+                  $syncResponse = Invoke-WebRequest -Uri "http://127.0.0.1:3060/system/gh" -UseBasicParsing -TimeoutSec 2
+                  $syncStatus = $syncResponse.Content | ConvertFrom-Json
+                  if (-not $syncStatus.available -or -not $syncStatus.bundled) {
+                    throw "Packaged application could not discover its bundled GitHub CLI."
+                  }
                   $responded = $true
                   break
                 }

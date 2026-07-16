@@ -20,6 +20,7 @@ try {
 
     & $Python -m pip install --upgrade pip
     & $Python -m pip install -r requirements-build.txt
+    & (Join-Path $ProjectRoot "scripts\fetch-gh.ps1") -Destination (Join-Path $ProjectRoot "vendor")
 
     if (-not $SkipTests) {
         & $Python -m pytest -q
@@ -31,6 +32,7 @@ try {
     & $Python -m PyInstaller --noconfirm --clean --onefile --windowed `
         --name ticket-pr-agent `
         --additional-hooks-dir "pyinstaller-hooks" `
+        --add-binary "vendor\gh.exe;." `
         --add-data "templates;templates" `
         --add-data "static;static" `
         launcher.py

@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+import os
+
 import launcher
 
 
 def test_build_app_url() -> None:
     assert launcher.build_app_url(3060) == "http://127.0.0.1:3060"
+
+
+def test_configure_bundled_tools_prepends_embedded_gh(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(launcher.sys, "_MEIPASS", str(tmp_path), raising=False)
+    monkeypatch.setenv("PATH", "existing-path")
+    tmp_path.joinpath("gh.exe").touch()
+
+    launcher.configure_bundled_tools()
+
+    assert os.environ["PATH"] == f"{tmp_path}{os.pathsep}existing-path"
 
 
 def test_open_browser_when_ready_schedules_daemon_timer(monkeypatch) -> None:

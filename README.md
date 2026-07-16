@@ -97,7 +97,11 @@ To publish a build:
 
 The workflow can also be run manually from the **Actions** tab. Manual runs upload the executable as a temporary workflow artifact but do not modify a GitHub Release.
 
-The executable still requires the GitHub CLI (`gh`) to be installed and authenticated on the Windows machine because the application uses it to read GitHub issues.
+The executable bundles the official GitHub CLI (`gh`) used to read and update
+GitHub issues. The build downloads the latest Windows CLI archive and verifies
+it against GitHub's published SHA-256 checksum before packaging it. GitHub
+authentication is still user-specific: authenticate an installed GitHub CLI
+once with `gh auth login`, or provide `GH_TOKEN` when starting the application.
 
 The application loads `.env` automatically from the project directory and also respects environment variables supplied by your shell, process manager, or container.
 

@@ -1,7 +1,20 @@
 from __future__ import annotations
 
+import os
+import sys
 import threading
 import webbrowser
+from pathlib import Path
+
+
+def configure_bundled_tools() -> None:
+    """Expose executables embedded by PyInstaller to child processes."""
+    bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    if bundle_root.joinpath("gh.exe").is_file():
+        os.environ["PATH"] = str(bundle_root) + os.pathsep + os.environ.get("PATH", "")
+
+
+configure_bundled_tools()
 
 from app import app, find_available_port
 

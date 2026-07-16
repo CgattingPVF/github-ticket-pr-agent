@@ -5,6 +5,7 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from core import generate_test_plan, make_branch_name, parse_issue_url
 from config import Settings
 from prompts import all_in_one_prompt, investigation_prompt, review_prompt
 from store import JobStore
-from ticket_sync import import_workbook, sync_github
+from ticket_sync import find_gh_executable, import_workbook, sync_github
 from workflow import WorkflowRunner
 from github_ops import GitHubOps
 
@@ -291,6 +292,18 @@ def api_user():
         return jsonify({'login': None}), 401
     except Exception:
         return jsonify({'login': None}), 401
+
+
+@app.get('/system/gh')
+def github_cli_status():
+    try:
+        executable = Path(find_gh_executable())
+        return jsonify({
+            'available': True,
+            'bundled': bool(getattr(sys, '_MEIPASS', None)) and executable.parent == Path(sys._MEIPASS),
+        })
+    except RuntimeError as exc:
+        return jsonify({'available': False, 'bundled': False, 'error': str(exc)}), 503
 
 
 @app.get('/jobs')
