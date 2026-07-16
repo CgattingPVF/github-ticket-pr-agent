@@ -286,6 +286,7 @@ dd { margin: 0; }
 .lab-head p { color: var(--muted); max-width: 640px; margin: 8px 0 0; }
 .lab-sync-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .sync-status { color: var(--green); font-size: 12px; font-weight: 600; min-height: 16px; }
+.sync-status.sync-error { color: var(--red); border-left: 3px solid var(--red); padding: 8px 10px; background: rgba(255, 60, 80, .08); }
 .lab-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .testing-target { margin-bottom: 20px; }
 .testing-hero { position: relative; padding: 26px; overflow: hidden; border: 1px solid rgba(0,240,255,.28); background: radial-gradient(circle at 85% 40%, rgba(255,0,128,.16), transparent 26%), linear-gradient(115deg, rgba(0,240,255,.08), rgba(4,7,12,.2) 45%); clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 16px 100%, 0 calc(100% - 16px)); }

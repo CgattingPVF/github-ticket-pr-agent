@@ -8,6 +8,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+import requests
 from openpyxl import load_workbook
 
 
@@ -104,7 +105,86 @@ def _github_api_error(repository: str, result: subprocess.CompletedProcess[str])
     return RuntimeError(f'GitHub issue sync failed: {details}')
 
 
-def _project_metadata(repository: str, issue_numbers: list[int], token: str | None) -> dict[int, dict[str, str]]:
+def _github_token(token: str | None) -> str:
+    if token:
+        return token
+    result = _run_gh(['auth', 'token', '--hostname', 'github.com'])
+    if result.returncode:
+        raise _github_api_error('', result)
+    resolved = (result.stdout or '').strip()
+    if not resolved:
+        raise RuntimeError(
+            'GitHub CLI did not provide an authentication token. Use Jack in // GitHub, '
+            'finish the browser authorization, and try the scan again.'
+        )
+    return resolved
+
+
+def _github_headers(token: str) -> dict[str, str]:
+    return {
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'ticket-pr-agent',
+    }
+
+
+def _fetch_github_issues(repository: str, state: str, limit: int, token: str | None) -> list[dict]:
+    resolved_token = _github_token(token)
+    if repository:
+        url = f'https://api.github.com/repos/{repository}/issues'
+        params: dict[str, object] = {'state': state, 'per_page': min(limit, 100)}
+    else:
+        url = 'https://api.github.com/search/issues'
+        params = {'q': f'state:{state} is:issue', 'per_page': min(limit, 100)}
+
+    try:
+        response = requests.get(
+            url,
+            params=params,
+            headers=_github_headers(resolved_token),
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(f'Could not connect to GitHub: {exc}') from exc
+
+    if response.status_code >= 400:
+        result = subprocess.CompletedProcess(
+            args=['GET', url],
+            returncode=1,
+            stdout='',
+            stderr=f'{response.text} (HTTP {response.status_code})',
+        )
+        raise _github_api_error(repository, result)
+
+    try:
+        payload = response.json()
+    except requests.exceptions.JSONDecodeError as exc:
+        raise RuntimeError('GitHub returned a response that was not valid JSON.') from exc
+
+    items = payload.get('items', []) if isinstance(payload, dict) else payload
+    if not isinstance(items, list):
+        raise RuntimeError('GitHub returned an unexpected issue-list response.')
+    return items
+
+
+def _github_graphql(query: str, token: str) -> dict | None:
+    try:
+        response = requests.post(
+            'https://api.github.com/graphql',
+            json={'query': query},
+            headers=_github_headers(token),
+            timeout=30,
+        )
+        if response.status_code >= 400:
+            return None
+        payload = response.json()
+        return payload if isinstance(payload, dict) else None
+    except (requests.RequestException, requests.exceptions.JSONDecodeError):
+        return None
+
+
+def _project_metadata(repository: str, issue_numbers: list[int], token: str) -> dict[int, dict[str, str]]:
     """Read GitHub Projects v2 priority and status fields in small GraphQL batches."""
     owner, name = repository.split('/', 1)
     metadata: dict[int, dict[str, str]] = {}
@@ -114,11 +194,11 @@ def _project_metadata(repository: str, issue_numbers: list[int], token: str | No
             f'i{number}: issue(number: {number}) {{ projectItems(first: 10) {{ nodes {{ fieldValues(first: 30) {{ nodes {{ ... on ProjectV2ItemFieldSingleSelectValue {{ name field {{ ... on ProjectV2SingleSelectField {{ name }} }} }} }} }} }} }} }}'
             for number in numbers
         )
-        result = _run_gh(['api', 'graphql', '-f', f'query=query {{ repository(owner: "{owner}", name: "{name}") {{ {fields} }} }}'], token=token)
+        query = f'query {{ repository(owner: "{owner}", name: "{name}") {{ {fields} }} }}'
         try:
             # GraphQL can return useful partial data alongside field-level errors.
             # Keep the successful aliases instead of dropping the whole batch.
-            data = json.loads(result.stdout)['data']['repository']
+            data = (_github_graphql(query, token) or {})['data']['repository']
             for number in numbers:
                 for item in (data.get(f'i{number}') or {}).get('projectItems', {}).get('nodes', []):
                     for value in item.get('fieldValues', {}).get('nodes', []):
@@ -172,26 +252,13 @@ def sync_github(repository: str = '', state: str = 'open', limit: int = 100, tok
     if repository and not _REPOSITORY_PATTERN.fullmatch(repository):
         raise ValueError('Repository must use the `owner/repository` format.')
 
-    endpoint = (
-        f'repos/{repository}/issues?state={state}&per_page={min(limit, 100)}'
-        if repository
-        else f'search/issues?q=state:{state}+is:issue&per_page={min(limit, 100)}'
-    )
-    result = _run_gh(['api', endpoint], token=token)
-    if result.returncode:
-        raise _github_api_error(repository, result)
-
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f'GitHub returned invalid JSON: {exc}') from exc
-
-    items = payload.get('items', []) if isinstance(payload, dict) else payload
+    resolved_token = _github_token(token)
+    items = _fetch_github_issues(repository, state, limit, resolved_token)
     # GitHub's REST issues endpoint includes pull requests. Besides not belonging
     # in the ticket queue, a PR number queried as an Issue poisons its entire
     # GraphQL metadata batch with a field-level error.
     items = [item for item in items if isinstance(item, dict) and 'pull_request' not in item]
-    project_metadata = _project_metadata(repository, [issue['number'] for issue in items], token) if repository else {}
+    project_metadata = _project_metadata(repository, [issue['number'] for issue in items], resolved_token) if repository else {}
     now = datetime.now(timezone.utc).isoformat()
     tickets = []
     for issue in items:

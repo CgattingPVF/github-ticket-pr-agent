@@ -98,15 +98,26 @@ function copyOutput() {
 
 async function syncGithub() {
   const status = document.getElementById('ticketStatus');
+  const button = document.querySelector('button[onclick="syncGithub()"]');
   status.textContent = 'SCANNING NETWORK…';
-  const res = await fetch('/tickets/sync', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({repository: document.getElementById('repository').value})
-  });
-  const data = await res.json();
-  status.textContent = data.error || `${data.count} ELIGIBLE CONTRACTS // ${data.synced_count ?? data.count} OPEN ISSUES SCANNED`;
-  loadTickets();
+  status.classList.remove('sync-error');
+  button.disabled = true;
+  try {
+    const res = await fetch('/tickets/sync', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({repository: document.getElementById('repository').value})
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `GitHub sync failed (${res.status})`);
+    status.textContent = `${data.count} ELIGIBLE CONTRACTS // ${data.synced_count ?? data.count} OPEN ISSUES SCANNED`;
+    await loadTickets();
+  } catch (error) {
+    status.classList.add('sync-error');
+    status.textContent = `GITHUB SCAN FAILED // ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function loadTickets() {

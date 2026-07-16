@@ -43,25 +43,65 @@ def test_sync_excludes_pull_requests_before_loading_project_metadata(monkeypatch
     }
     calls = []
 
-    def fake_run(arguments, timeout=60, token=None):
-        calls.append(arguments)
-        if arguments[:2] == ['api', 'graphql']:
-            assert 'i1105: issue(number: 1105)' in arguments[-1]
-            assert '1106' not in arguments[-1]
-            payload = {'data': {'repository': {'i1105': {'projectItems': {'nodes': [
-                {'fieldValues': {'nodes': [
-                    {'name': 'Backlog', 'field': {'name': 'Status'}},
-                ]}},
-            ]}}}}}
-        else:
-            payload = [issue, pull_request]
-        return subprocess.CompletedProcess(arguments, 0, json.dumps(payload), '')
+    monkeypatch.setattr(
+        ticket_sync,
+        '_fetch_github_issues',
+        lambda repository, state, limit, token: [issue, pull_request],
+    )
 
-    monkeypatch.setattr(ticket_sync, '_run_gh', fake_run)
+    def fake_graphql(query, token):
+        calls.append(query)
+        assert 'i1105: issue(number: 1105)' in query
+        assert '1106' not in query
+        return {'data': {'repository': {'i1105': {'projectItems': {'nodes': [
+            {'fieldValues': {'nodes': [
+                {'name': 'Backlog', 'field': {'name': 'Status'}},
+            ]}},
+        ]}}}}}
 
-    tickets = ticket_sync.sync_github('org/repo')
+    monkeypatch.setattr(ticket_sync, '_github_graphql', fake_graphql)
+
+    tickets = ticket_sync.sync_github('org/repo', token='secret-token')
 
     assert [(ticket['number'], ticket['project_status']) for ticket in tickets] == [(1105, 'Backlog')]
+
+
+def test_fetch_issues_uses_https_api_instead_of_parsing_gh_json(monkeypatch) -> None:
+    issue = {'number': 7, 'title': 'Broken widget'}
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = json.dumps([issue])
+
+        @staticmethod
+        def json():
+            return [issue]
+
+    def fake_get(url, **kwargs):
+        captured['url'] = url
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(ticket_sync.requests, 'get', fake_get)
+
+    result = ticket_sync._fetch_github_issues('org/repo', 'open', 100, 'secret-token')
+
+    assert result == [issue]
+    assert captured['url'] == 'https://api.github.com/repos/org/repo/issues'
+    assert captured['headers']['Authorization'] == 'Bearer secret-token'
+    assert captured['params'] == {'state': 'open', 'per_page': 100}
+
+
+def test_missing_cli_token_has_actionable_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ticket_sync,
+        '_run_gh',
+        lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, None, ''),
+    )
+
+    with pytest.raises(RuntimeError, match='Jack in // GitHub'):
+        ticket_sync._github_token(None)
 
 
 def test_404_error_explains_repository_access() -> None:

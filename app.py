@@ -839,7 +839,8 @@ def ticket_test_plan():
 @app.post('/tickets/sync')
 def sync_tickets():
     try:
-        repository = request.json.get('repository', '').strip()
+        payload = request.get_json(silent=True) or {}
+        repository = str(payload.get('repository') or '').strip()
         token = get_github_token()
         synced = sync_github(repository, token=token)
         store.prune_repository_tickets(repository, [ticket['key'] for ticket in synced])
@@ -848,8 +849,20 @@ def sync_tickets():
         if repository:
             eligible = [ticket for ticket in eligible if ticket.get('repository') == repository]
         return jsonify({'count': len(eligible), 'synced_count': len(synced)})
+    except ValueError as exc:
+        return jsonify({'error': str(exc), 'kind': 'validation'}), 422
     except Exception as exc:
-        return jsonify({'error': str(exc)}), 400
+        message = str(exc)
+        lowered = message.lower()
+        if 'not authenticated' in lowered or 'authentication token' in lowered or 'not logged' in lowered:
+            status, kind = 401, 'authentication'
+        elif 'permission' in lowered or 'forbidden' in lowered or 'http 403' in lowered:
+            status, kind = 403, 'permission'
+        elif 'could not access' in lowered or 'http 404' in lowered:
+            status, kind = 404, 'repository'
+        else:
+            status, kind = 502, 'github'
+        return jsonify({'error': message, 'kind': kind}), status
 
 
 @app.post("/prompt/investigation")
