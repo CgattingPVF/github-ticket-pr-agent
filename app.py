@@ -10,15 +10,14 @@ from pathlib import Path
 
 from authlib.integrations.flask_client import OAuth
 from datetime import datetime, timedelta, timezone
-
 from flask import Flask, jsonify, render_template, request, redirect, url_for, session
-
-from core import generate_test_plan, make_branch_name
+from core import generate_test_plan, make_branch_name, parse_issue_url
 from config import Settings
 from prompts import all_in_one_prompt, investigation_prompt, review_prompt
 from store import JobStore
 from ticket_sync import import_workbook, sync_github
 from workflow import WorkflowRunner
+from github_ops import GitHubOps
 
 
 def get_github_token():
@@ -62,6 +61,20 @@ def fetch_issue_from_github(issue_url: str) -> dict:
         raise Exception(f"Invalid response from GitHub: {e}")
     except Exception as e:
         raise Exception(f"Failed to fetch issue: {e}")
+
+
+def post_issue_comment(issue_url: str, body: str) -> None:
+    repo, issue_num = parse_github_url(issue_url)
+    env = os.environ.copy()
+    token = get_github_token()
+    if token:
+        env['GH_TOKEN'] = token
+    result = subprocess.run(
+        ["gh", "api", f"repos/{repo}/issues/{issue_num}/comments", "-f", f"body={body}"],
+        capture_output=True, text=True, timeout=20, env=env,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "Unable to comment on the GitHub ticket")
 
 
 def parse_github_url(url: str) -> tuple[str, str]:
@@ -428,6 +441,214 @@ def root():
 @app.get("/prompts")
 def prompts_page():
     return render_template('prompts.html')
+
+
+@app.get("/testing")
+def testing_page():
+    return render_template('testing.html')
+
+
+@app.post("/testing/plan")
+def testing_plan():
+    issue_url = (request.get_json(silent=True) or {}).get('issue_url', '').strip()
+    if not issue_url:
+        return jsonify({'error': 'GitHub issue URL required'}), 400
+    try:
+        repo, issue_num = parse_github_url(issue_url)
+        issue = fetch_issue_from_github(issue_url)
+        if issue.get('pull_request'):
+            return jsonify({'error': 'Enter an issue ticket URL, not a pull request'}), 400
+        job = store.latest_for_issue(issue_url)
+        checks = (job.get('result') or {}).get('tests_run', []) if job else []
+        return jsonify({
+            'issue': {'url': issue_url, 'number': issue.get('number'), 'title': issue.get('title', ''), 'repository': repo},
+            'job': ({'id': job['id'], 'status': job['status'], 'stage': job['stage'], 'updated_at': job['updated_at']} if job else None),
+            'checks': checks,
+        })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.post("/testing/run")
+def testing_run():
+    payload = request.get_json(silent=True) or {}
+    issue_url = str(payload.get('issue_url', '')).strip()
+    provider = str(payload.get('provider', 'codex')).lower()
+    if not issue_url:
+        return jsonify({'error': 'GitHub issue URL required'}), 400
+    if provider not in {'codex', 'claude'}:
+        return jsonify({'error': 'Provider must be codex or claude'}), 400
+    try:
+        parse_github_url(issue_url)
+        job_id = store.create({
+            'issue_url': issue_url, 'base_branch': 'develop',
+            'workflow_profile': 'testing_only', 'agent_provider': provider,
+            'agent_command': '', 'approval_mode': 'auto',
+            'github_login': session.get('github_login'),
+        })
+        runner.start_testing(job_id)
+        return jsonify({'job_id': job_id}), 202
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.post("/testing/jobs/<job_id>/fix")
+def testing_fix(job_id: str):
+    source = store.get(job_id)
+    if not source or source.get('parameters', {}).get('workflow_profile') != 'testing_only':
+        return jsonify({'error': 'Failed QA run not found'}), 404
+    result = source.get('result') or {}
+    if str(result.get('overall', '')).lower() == 'passed':
+        return jsonify({'error': 'This QA run already passed'}), 400
+    provider = str((request.get_json(silent=True) or {}).get('provider') or result.get('provider') or 'codex').lower()
+    fix_id = store.create({
+        'issue_url': source['issue_url'], 'base_branch': 'develop',
+        'workflow_profile': 'qa_fix', 'agent_provider': provider,
+        'review_provider': provider, 'agent_command': '', 'review_command': '',
+        'branch_prefix': 'bug-fix', 'validation_commands': '',
+        'close_issue_on_merge': False, 'comment_on_failure': True,
+        'approval_mode': 'auto',
+        'github_login': session.get('github_login'),
+    })
+    # Route through the same evidence, validation, review, repair, and publish
+    # pipeline as the Autonomous Daemon. The qa_fix profile changes only branch
+    # preparation and the final PR action.
+    runner.start(fix_id)
+    return jsonify({'job_id': fix_id}), 202
+
+
+@app.post("/testing/jobs/<job_id>/override")
+def testing_override(job_id: str):
+    source = store.get(job_id)
+    if not source or source.get('parameters', {}).get('workflow_profile') != 'testing_only':
+        return jsonify({'error': 'Completed autonomous QA run not found'}), 404
+    if source.get('status') != 'completed':
+        return jsonify({'error': 'QA outcomes can only be overridden after the run completes'}), 400
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        index = int(payload.get('index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'A valid test index is required'}), 400
+    status = str(payload.get('status', '')).lower()
+    reason = str(payload.get('reason', '')).strip()[:1000]
+    if status not in {'passed', 'failed', 'skipped', 'original'}:
+        return jsonify({'error': 'Status must be passed, failed, skipped, or original'}), 400
+    if status != 'original' and not reason:
+        return jsonify({'error': 'Explain why this automated result should be overridden'}), 400
+
+    result = dict(source.get('result') or {})
+    tests = [dict(item) for item in result.get('tests_run') or [] if isinstance(item, dict)]
+    if index < 0 or index >= len(tests):
+        return jsonify({'error': 'Test result was not found'}), 404
+    item = tests[index]
+    automated_status = str(item.get('automated_result') or item.get('result') or 'skipped').lower()
+    if automated_status not in {'passed', 'failed', 'skipped'}:
+        automated_status = 'skipped'
+    item['automated_result'] = automated_status
+    if status == 'original':
+        item['result'] = automated_status
+        item.pop('operator_override', None)
+        action = f"restored the automated **{automated_status.upper()}** result"
+    else:
+        item['result'] = status
+        item['operator_override'] = {
+            'status': status,
+            'reason': reason,
+            'by': session.get('github_login') or 'local operator',
+            'recorded_at': datetime.now(timezone.utc).isoformat(),
+        }
+        action = f"changed **{automated_status.upper()}** to **{status.upper()}**"
+
+    statuses = [str(test.get('result', '')).lower() for test in tests]
+    # A skipped proof is non-blocking in the Testing Lab. Only an explicit
+    # failure prevents the ticket from reaching Done.
+    overall = 'failed' if 'failed' in statuses else 'passed'
+    result['tests_run'] = tests
+    result['overall'] = overall
+    result['override_allowed'] = True
+    result.setdefault('automated_overall', source.get('result', {}).get('automated_overall') or source.get('result', {}).get('overall'))
+    project_warning = ''
+    if overall == 'passed':
+        try:
+            project_ops = GitHubOps(settings.command_timeout_seconds, lambda message: None)
+            counts = project_ops.mark_issue_qa_done(parse_issue_url(source['issue_url']))
+            status_count = counts.get('Status', 0)
+            test_count = counts.get('Test State', 0)
+            updated = bool(status_count and test_count)
+            result['project_status'] = {
+                'updated': updated, 'count': status_count, 'test_state_count': test_count,
+                'status': 'Done', 'test_state': 'Pass',
+            }
+            if not updated:
+                project_warning = 'Override saved, but the project is missing a Done Status or Pass Test State option.'
+        except Exception as exc:
+            project_warning = f'Override saved, but GitHub project fields could not update: {exc}'
+            result['project_status'] = {
+                'updated': False, 'count': 0, 'test_state_count': 0,
+                'status': 'Done', 'test_state': 'Pass', 'warning': str(exc),
+            }
+    store.update(job_id, result_json=result)
+
+    check_name = str(item.get('command') or f'Automated check {index + 1}').replace('\r', ' ').replace('\n', ' ').replace('`', "'")
+    comment = (
+        f"## QA operator override — {status.upper() if status != 'original' else 'RESET'}\n\n"
+        f"Check: `{check_name[:500]}`\n\n"
+        f"The operator {action}."
+    )
+    if reason:
+        comment += f"\n\n**Reason:** {reason}"
+    comment += f"\n\n**Recalculated QA outcome:** {overall.upper()}\n\n> The original machine result remains recorded in MergeQuest for auditability."
+    try:
+        post_issue_comment(source['issue_url'], comment)
+    except Exception as exc:
+        return jsonify({
+            'ok': True,
+            'warning': f'Override saved locally, but the GitHub correction could not be posted: {exc}',
+            'result': result,
+        })
+    return jsonify({'ok': True, 'result': result, 'warning': project_warning})
+
+
+@app.post("/testing/results")
+def testing_results():
+    payload = request.get_json(silent=True) or {}
+    issue_url = str(payload.get('issue_url', '')).strip()
+    results = payload.get('results')
+    summary = str(payload.get('summary', '')).strip()
+    if not issue_url or not isinstance(results, list) or not results:
+        return jsonify({'error': 'Issue URL and at least one test result are required'}), 400
+    try:
+        issue = fetch_issue_from_github(issue_url)
+        allowed = {'passed', 'failed', 'skipped'}
+        normalized = []
+        for item in results[:30]:
+            step = str(item.get('step', '')).strip()[:500]
+            status = str(item.get('status', '')).lower()
+            notes = str(item.get('notes', '')).strip()[:1000]
+            if not step or status not in allowed:
+                return jsonify({'error': 'Every test needs a step and passed, failed, or skipped status'}), 400
+            normalized.append((step, status, notes))
+        counts = {status: sum(item[1] == status for item in normalized) for status in allowed}
+        overall = 'FAILED' if counts['failed'] else ('PASSED' if counts['passed'] else 'INCOMPLETE')
+        labels = {'passed': ('x', 'PASS'), 'failed': (' ', 'FAIL'), 'skipped': (' ', 'SKIPPED')}
+        rows = []
+        for step, status, notes in normalized:
+            mark, label = labels[status]
+            clean_step = step.replace('\r', ' ').replace('\n', ' ')
+            clean_notes = notes.replace('\r', ' ').replace('\n', ' ')
+            rows.append(f"- [{mark}] **{label}** — {clean_step}" + (f" — {clean_notes}" if clean_notes else ''))
+        body = (
+            f"## Automated test results — {overall}\n\nTicket: #{issue.get('number')} — {issue.get('title', '')}\n\n"
+            + '\n'.join(rows)
+            + f"\n\n**Totals:** {counts['passed']} passed · {counts['failed']} failed · {counts['skipped']} skipped"
+        )
+        if summary:
+            body += f"\n\n**Tester summary:** {summary[:2000]}"
+        post_issue_comment(issue_url, body + "\n\n> Captured by the MergeQuest autonomous integrity scanner.")
+        return jsonify({'ok': True, 'overall': overall})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
 
 
 @app.get('/tickets')

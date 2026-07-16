@@ -9,6 +9,7 @@ from core import IssueRef, WorkflowError, dump_json, run_command
 
 
 TEST_DIRECTORIES = {"test", "tests", "spec", "specs", "__tests__"}
+SCHEMA_DIRECTORIES = {"migration", "migrations", "schema", "schemas"}
 
 
 def is_test_file(path: str) -> bool:
@@ -21,6 +22,17 @@ def is_test_file(path: str) -> bool:
     return bool(
         re.search(r"(^test[_.-]|[_.-](?:test|tests|spec|specs)(?:\.|$))", filename, re.IGNORECASE)
         or re.search(r"(?:Test|Tests|Spec|Specs)$", stem)
+    )
+
+
+def is_schema_file(path: str) -> bool:
+    """Return whether a changed path represents SQL or an explicit schema change."""
+    parts = Path(path).parts
+    filename = parts[-1].lower() if parts else path.lower()
+    return (
+        filename.endswith('.sql')
+        or filename.startswith('schema.')
+        or any(part.lower() in SCHEMA_DIRECTORIES for part in parts[:-1])
     )
 
 
@@ -53,6 +65,80 @@ class GitHubOps:
         )
         return json.loads(result.stdout)
 
+    def set_issue_project_fields(self, ref: IssueRef, selections: dict[str, str]) -> dict[str, int]:
+        """Set named GitHub Projects v2 single-select fields on an issue."""
+        query = f'''query {{
+          repository(owner: "{ref.owner}", name: "{ref.repo}") {{
+            issue(number: {ref.number}) {{
+              projectItems(first: 20) {{ nodes {{
+                id
+                project {{
+                  id
+                  fields(first: 50) {{ nodes {{
+                    ... on ProjectV2SingleSelectField {{ id name options {{ id name }} }}
+                  }} }}
+                }}
+              }} }}
+            }}
+          }}
+        }}'''
+        result = run_command(
+            ["gh", "api", "graphql", "-f", f"query={query}"],
+            timeout=self.timeout, log=self.log,
+        )
+        try:
+            nodes = json.loads(result.stdout)["data"]["repository"]["issue"]["projectItems"]["nodes"]
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise WorkflowError("GitHub did not return project metadata for the ticket.") from exc
+
+        wanted = {name.strip().lower(): value.strip() for name, value in selections.items()}
+        counts = {name: 0 for name in selections}
+        updates: list[tuple[str, str, str, str, str]] = []
+        for item in nodes or []:
+            project = item.get("project") or {}
+            for field in (project.get("fields") or {}).get("nodes", []):
+                field_name = str(field.get("name", "")).strip()
+                lookup = field_name.lower()
+                # Some boards call the workflow field "Project Status".
+                requested_key = "status" if lookup == "project status" and "status" in wanted else lookup
+                if requested_key not in wanted:
+                    continue
+                desired = wanted[requested_key].lower()
+                accepted = {desired}
+                if desired == "pass":
+                    accepted.add("passed")
+                elif desired == "done":
+                    accepted.update({"complete", "completed"})
+                option = next(
+                    (choice for choice in field.get("options", []) if str(choice.get("name", "")).strip().lower() in accepted),
+                    None,
+                )
+                if option:
+                    display_key = next(key for key in selections if key.strip().lower() == requested_key)
+                    updates.append((project["id"], item["id"], field["id"], option["id"], display_key))
+
+        for project_id, item_id, field_id, option_id, display_key in updates:
+            mutation = f'''mutation {{
+              updateProjectV2ItemFieldValue(input: {{
+                projectId: "{project_id}", itemId: "{item_id}", fieldId: "{field_id}",
+                value: {{ singleSelectOptionId: "{option_id}" }}
+              }}) {{ projectV2Item {{ id }} }}
+            }}'''
+            run_command(
+                ["gh", "api", "graphql", "-f", f"query={mutation}"],
+                timeout=self.timeout, log=self.log,
+            )
+            counts[display_key] += 1
+        return counts
+
+    def mark_issue_qa_done(self, ref: IssueRef) -> dict[str, int]:
+        """Mark a successful QA ticket Done with a passing Test State."""
+        return self.set_issue_project_fields(ref, {"Status": "Done", "Test State": "Pass"})
+
+    def set_issue_project_status(self, ref: IssueRef, status_name: str = "Done") -> int:
+        """Backward-compatible helper for updating only the project Status."""
+        return self.set_issue_project_fields(ref, {"Status": status_name})["Status"]
+
     def clone(self, ref: IssueRef, destination: Path) -> None:
         run_command(
             ["gh", "repo", "clone", ref.full_name, str(destination), "--", "--filter=blob:none"],
@@ -72,6 +158,53 @@ class GitHubOps:
         exclude = repo_dir / ".git" / "info" / "exclude"
         with exclude.open("a", encoding="utf-8") as handle:
             handle.write("\n.ticket-agent/\n")
+
+    def linked_open_pr(
+        self, ref: IssueRef, issue_ref: IssueRef | None = None, *, required: bool = True,
+    ) -> dict | None:
+        """Find an open PR in ``ref`` which explicitly links ``issue_ref``."""
+        source = issue_ref or ref
+        result = run_command(
+            ["gh", "pr", "list", "--repo", ref.full_name, "--state", "open", "--limit", "100",
+             "--json", "number,url,headRefName,baseRefName,body,title"],
+            timeout=self.timeout, log=self.log,
+        )
+        markers = [
+            f"{source.owner}/{source.repo}#{source.number}",
+            f"github.com/{source.full_name}/issues/{source.number}",
+        ]
+        if ref.full_name == source.full_name:
+            markers.append(f"#{source.number}")
+        def links_ticket(pr: dict) -> bool:
+            body = (pr.get("body") or "").lower()
+            if any(marker.lower() in body for marker in markers[:2]):
+                return True
+            return bool(
+                ref.full_name == source.full_name
+                and re.search(rf"(?<!\d)#{source.number}(?!\d)", body)
+            )
+
+        matches = [pr for pr in json.loads(result.stdout) if links_ticket(pr)]
+        if not matches:
+            if required:
+                raise WorkflowError(f"No open pull request linked to ticket #{source.number} was found in {ref.full_name}.")
+            return None
+        if len(matches) > 1:
+            raise WorkflowError(f"More than one open pull request in {ref.full_name} links ticket #{source.number}; close or unlink the obsolete PR first.")
+        return matches[0]
+
+    def checkout_pr_branch(self, repo_dir: Path, ref: IssueRef, pr: dict) -> None:
+        if self.has_changes(repo_dir):
+            raise WorkflowError("The target repository has uncommitted changes; the PR branch cannot be checked out safely.")
+        run_command(["git", "fetch", "origin", pr["headRefName"]], cwd=repo_dir, timeout=self.timeout, log=self.log)
+        run_command(["git", "checkout", "-B", pr["headRefName"], "FETCH_HEAD"], cwd=repo_dir, timeout=self.timeout, log=self.log)
+
+    def checkout_base_branch(self, repo_dir: Path, base_branch: str) -> None:
+        """Prepare a clean local base for inspecting a paired repository."""
+        if self.has_changes(repo_dir):
+            raise WorkflowError("The paired repository has uncommitted changes and cannot be prepared safely.")
+        run_command(["git", "fetch", "origin", base_branch], cwd=repo_dir, timeout=self.timeout, log=self.log)
+        run_command(["git", "checkout", "-B", base_branch, "FETCH_HEAD"], cwd=repo_dir, timeout=self.timeout, log=self.log)
 
     def ensure_commit_identity(self, repo_dir: Path) -> None:
         email = run_command(
@@ -108,6 +241,13 @@ class GitHubOps:
             timeout=self.timeout,
             log=self.log,
         ).stdout
+
+    def changed_paths(self, repo_dir: Path, base_branch: str) -> list[str]:
+        output = run_command(
+            ["git", "diff", "--name-only", "-z", f"origin/{base_branch}...HEAD"],
+            cwd=repo_dir, timeout=self.timeout, log=self.log,
+        ).stdout
+        return [path for path in output.split("\0") if path]
 
     def validate_diff(self, repo_dir: Path) -> None:
         run_command(["git", "diff", "--check"], cwd=repo_dir, timeout=self.timeout, log=self.log)

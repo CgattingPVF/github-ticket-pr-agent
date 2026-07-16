@@ -25,8 +25,8 @@ from core import (
     validate_ref_name,
     working_tree_fingerprint,
 )
-from github_ops import GitHubOps
-from prompts import confidence_gate_prompt, investigation_prompt, repair_prompt, review_prompt
+from github_ops import GitHubOps, is_schema_file
+from prompts import automated_qa_prompt, confidence_gate_prompt, investigation_prompt, repair_prompt, review_prompt
 from store import JobStore
 
 
@@ -44,6 +44,137 @@ class WorkflowRunner:
     def start(self, job_id: str) -> None:
         thread = threading.Thread(target=self._run_with_slot, args=(job_id,), daemon=True)
         thread.start()
+
+    def start_testing(self, job_id: str) -> None:
+        thread = threading.Thread(target=self._run_testing_with_slot, args=(job_id,), daemon=True)
+        thread.start()
+
+    def _run_testing_with_slot(self, job_id: str) -> None:
+        with self._run_slots:
+            if self.settings.local_repo_path:
+                with self._local_workspace_lock:
+                    self.run_testing(job_id)
+            else:
+                self.run_testing(job_id)
+
+    def run_testing(self, job_id: str) -> None:
+        job = self.store.get(job_id)
+        if not job:
+            return
+        params = job["parameters"]
+        log = lambda message: self.log(job_id, message)
+        self.store.update(job_id, status="running", stage="Reading ticket")
+        result_path: Path | None = None
+        try:
+            if not self.settings.local_repo_path:
+                raise WorkflowError("Testing Lab requires LOCAL_REPO_PATH to point to CRM_APP_PVF.")
+            workspace_dir = self.settings.local_repo_path
+            if not workspace_dir.exists():
+                raise WorkflowError(f"CRM_APP_PVF workspace was not found at {workspace_dir}.")
+            issue_ref = parse_issue_url(params["issue_url"])
+            provider = params.get("agent_provider", "codex")
+            command = self._provider_command(provider, params.get("agent_command"), "agent")
+            if not command_exists(command):
+                raise WorkflowError(f"Agent executable is not installed or on PATH: {command}")
+
+            github = GitHubOps(self.settings.command_timeout_seconds, log)
+            github.check_auth()
+            issue = github.get_issue(issue_ref)
+            repos = [path for path in (workspace_dir / "crm-staff-desktop", workspace_dir / "crm-api") if (path / ".git").exists()]
+            if not repos and (workspace_dir / ".git").exists():
+                repos = [workspace_dir]
+            if not repos:
+                raise WorkflowError("No CRM git repositories were found in the configured workspace.")
+            before = {path: working_tree_fingerprint(path) for path in repos}
+
+            self.stage(job_id, f"Running autonomous QA with {provider.title()}")
+            self._open_editor(workspace_dir, log)
+            result_path = workspace_dir / ".ticket-agent" / f"qa-{job_id}.json"
+            result_path.parent.mkdir(parents=True, exist_ok=True)
+            result_path.unlink(missing_ok=True)
+            run_configured_command(
+                command, cwd=workspace_dir,
+                prompt=automated_qa_prompt(issue, str(result_path)),
+                timeout=self.settings.command_timeout_seconds, log=log,
+            )
+            result = load_json(result_path)
+            ensure_keys(result, ["summary", "overall", "tests_run"], "QA result")
+            reported_tests = self._dict_items(result.get("tests_run"))
+            tests = [item for item in reported_tests if not self._is_manual_ui_skip(item)]
+            excluded_ui_checks = len(reported_tests) - len(tests)
+            if excluded_ui_checks:
+                log(f"Excluded {excluded_ui_checks} manual UI verification item(s) from automated QA evidence.")
+            if not tests:
+                raise WorkflowError("The QA agent reported no relevant non-UI automated test evidence.")
+            # Skipped checks are informational here. QA succeeds whenever no
+            # check is explicitly failed.
+            qa_passed = not any(
+                str(item.get("result", "")).lower() == "failed" for item in tests
+            )
+            result["overall"] = "passed" if qa_passed else "failed"
+            # A stop is authoritative even when the CLI child reaches its natural
+            # end after the operator pressed Stop. Never post or mark that run
+            # completed after cancellation.
+            if (self.store.get(job_id) or {}).get("status") == "stopped":
+                log("QA child exited after stop; discarding its report.")
+                return
+            changed = [str(path) for path in repos if working_tree_fingerprint(path) != before[path]]
+            if changed:
+                raise WorkflowError("Testing-only run changed the workspace: " + ", ".join(changed))
+
+            self.stage(job_id, "Posting QA evidence to GitHub")
+            artifact_dir = self.settings.workspace_root / job_id
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            rows = "\n".join(
+                f"- [{'x' if str(item.get('result')).lower() == 'passed' else ' '}] "
+                f"**{str(item.get('result', 'skipped')).upper()}** — `{item.get('command', 'check')}`"
+                + (f" — {item.get('notes')}" if item.get('notes') else "") for item in tests
+            )
+            report = (
+                f"## Autonomous QA report — {str(result['overall']).upper()}\n\n"
+                f"{result['summary']}\n\n### Machine-verified evidence\n{rows}\n\n"
+                f"> Executed independently by MergeQuest Testing Lab using {provider.title()}; no production files were changed."
+            )
+            github.comment_on_issue(issue_ref, report, artifact_dir)
+            project_status: dict = {
+                "updated": False, "count": 0, "status": "Done", "test_state": "Pass",
+            }
+            if qa_passed:
+                try:
+                    counts = github.mark_issue_qa_done(issue_ref)
+                    status_count = counts.get("Status", 0)
+                    test_count = counts.get("Test State", 0)
+                    project_status = {
+                        "updated": bool(status_count and test_count),
+                        "count": status_count,
+                        "test_state_count": test_count,
+                        "status": "Done",
+                        "test_state": "Pass",
+                    }
+                    if not project_status["updated"]:
+                        project_status["warning"] = "The project is missing a Done Status or Pass Test State option."
+                    log(f"GitHub project sync: Status Done={status_count}, Test State Pass={test_count}.")
+                except Exception as exc:
+                    project_status["warning"] = str(exc)
+                    log(f"QA passed, but GitHub project status could not move to Done: {exc}")
+            final = {
+                **result,
+                "tests_run": tests,
+                "provider": provider,
+                "ticket_url": params["issue_url"],
+                "override_allowed": True,
+                "automated_overall": result.get("overall"),
+                "project_status": project_status,
+            }
+            self.store.update(job_id, status="completed", stage="QA report posted", result_json=final)
+            log("Completed: autonomous QA evidence posted to the ticket.")
+        except Exception as exc:
+            if (self.store.get(job_id) or {}).get("status") != "stopped":
+                self.store.update(job_id, status="failed", stage="QA scan failed", error=str(exc))
+            log(f"QA scan failed: {exc}")
+        finally:
+            if result_path:
+                result_path.unlink(missing_ok=True)
 
     def _run_with_slot(self, job_id: str) -> None:
         with self._run_slots:
@@ -98,6 +229,7 @@ class WorkflowRunner:
         started_at = time.time()
 
         try:
+            is_qa_fix = params.get("workflow_profile") == "qa_fix"
             issue_ref = parse_issue_url(params["issue_url"])
             base_branch = validate_ref_name(params["base_branch"], "base branch")
             branch_prefix = params.get("branch_prefix", "bug-fix")
@@ -117,6 +249,8 @@ class WorkflowRunner:
 
             artifact_dir = self.settings.workspace_root / job_id
             workspace_dir: Path
+            if is_qa_fix and not self.settings.local_repo_path:
+                raise WorkflowError("Fix and retest requires LOCAL_REPO_PATH to point to CRM_APP_PVF.")
             if self.settings.local_repo_path:
                 local_root = self.settings.local_repo_path
                 # LOCAL_REPO_PATH may point at an application workspace containing
@@ -145,8 +279,16 @@ class WorkflowRunner:
             self.approve_stage(job_id, "Reading ticket")
             self.stage(job_id, "Reading ticket")
             issue = github.get_issue(issue_ref)
-            repository = github.get_repository(issue_ref)
-            branch_name = make_branch_name(branch_prefix, issue_ref.number, issue["title"])
+            existing_prs: dict[str, dict] = {}
+            if is_qa_fix:
+                source_pr = github.linked_open_pr(issue_ref)
+                assert source_pr is not None
+                existing_prs[issue_ref.repo] = source_pr
+                base_branch = validate_ref_name(source_pr["baseRefName"], "PR base branch")
+                branch_name = validate_ref_name(source_pr["headRefName"], "PR head branch")
+                log(f"Fix/retest target: {source_pr['url']} ({branch_name} -> {base_branch})")
+            else:
+                branch_name = make_branch_name(branch_prefix, issue_ref.number, issue["title"])
             test_plan = self._get_or_generate_test_plan(issue_ref, issue, agent_command, artifact_dir, log)
 
             repo_dirs: dict[str, Path] = {issue_ref.repo: repo_dir}
@@ -163,7 +305,24 @@ class WorkflowRunner:
                 github.clone(issue_ref, repo_dir)
             for repo_name, current_repo_dir in repo_dirs.items():
                 log(f"Preparing repository: {repo_name}")
-                github.prepare_branch(current_repo_dir, base_branch, branch_name)
+                if is_qa_fix:
+                    repo_ref = type(issue_ref)(owner=issue_ref.owner, repo=repo_name, number=issue_ref.number)
+                    pr = existing_prs.get(repo_name)
+                    if pr is None:
+                        pr = github.linked_open_pr(repo_ref, issue_ref, required=False)
+                        if pr:
+                            existing_prs[repo_name] = pr
+                    if pr:
+                        if pr["baseRefName"] != base_branch:
+                            raise WorkflowError(
+                                f"Linked PR {pr['url']} targets {pr['baseRefName']}, not {base_branch}."
+                            )
+                        github.checkout_pr_branch(current_repo_dir, repo_ref, pr)
+                    else:
+                        github.checkout_base_branch(current_repo_dir, base_branch)
+                        log(f"No linked PR exists for {repo_name}; it is available for read-only investigation.")
+                else:
+                    github.prepare_branch(current_repo_dir, base_branch, branch_name)
             # When working from a local repository, open the enclosing application
             # workspace so both the desktop and API repositories are visible in VS Code.
             # Git operations and the coding agent remain scoped to repo_dir.
@@ -188,7 +347,8 @@ class WorkflowRunner:
             )
             (artifact_dir / "investigation-prompt.md").write_text(initial_prompt, encoding="utf-8")
             result = self._run_agent_gated(
-                job_id, agent_command, workspace_dir, result_path, issue, initial_prompt, log
+                job_id, agent_command, workspace_dir, result_path, issue, initial_prompt, log,
+                require_all_tests_passed=is_qa_fix,
             )
             changed_repos = {
                 name: path for name, path in repo_dirs.items() if github.has_changes(path)
@@ -231,14 +391,19 @@ class WorkflowRunner:
             if review["findings"]:
                 review["verdict"] = "BLOCK" if blocking_findings(review) else "COMMENT"
             cycles = 0
-            while blocking_findings(review) and cycles < self.settings.max_repair_cycles:
+            repair_limit = (
+                max(self.settings.max_repair_cycles, self.settings.max_gate_attempts - 1)
+                if is_qa_fix else self.settings.max_repair_cycles
+            )
+            while blocking_findings(review) and cycles < repair_limit:
                 cycles += 1
-                repair_stage = f"Repairing review findings ({cycles}/{self.settings.max_repair_cycles})"
+                repair_stage = f"Repairing review findings ({cycles}/{repair_limit})"
                 self.approve_stage(job_id, repair_stage)
                 self.stage(job_id, repair_stage)
                 result = self._run_agent_gated(
                     job_id, agent_command, workspace_dir, result_path, issue,
                     repair_prompt(issue, review, str(result_path)), log,
+                    require_all_tests_passed=is_qa_fix,
                 )
                 self.approve_stage(job_id, "Re-running validation")
                 self.stage(job_id, "Re-running validation")
@@ -257,6 +422,22 @@ class WorkflowRunner:
                         review["findings"].append({**finding, "repository": repo_name})
                 if review["findings"]:
                     review["verdict"] = "BLOCK" if blocking_findings(review) else "COMMENT"
+
+            blockers = blocking_findings(review)
+            if blockers:
+                titles = ", ".join(str(item.get("title", "blocking finding")) for item in blockers)
+                raise WorkflowError(f"Automated review still has blocking findings: {titles}")
+
+            if is_qa_fix:
+                tests = self._dict_items(result.get("tests_run"))
+                if not tests or any(str(item.get("result", "")).lower() != "passed" for item in tests):
+                    raise WorkflowError("The 100% test gate failed; the open PR was not updated.")
+                missing_prs = [name for name in changed_repos if name not in existing_prs]
+                if missing_prs:
+                    raise WorkflowError(
+                        "The fix changed repositories without linked open PRs: " + ", ".join(missing_prs)
+                        + ". No remote branches were updated."
+                    )
 
             # Investigation mode deliberately leaves the implementation in the
             # workspace for local review. It performs the same safety gates as
@@ -289,6 +470,7 @@ class WorkflowRunner:
             self._finish_pr(
                 job_id, params, log, issue_ref, issue, base_branch, branch_name,
                 changed_repos, result, review, reviews, test_plan, github, artifact_dir, started_at,
+                existing_prs=existing_prs if is_qa_fix else None,
             )
         except Exception as exc:  # noqa: BLE001 - workflow boundary must record every failure
             current = self.store.get(job_id)
@@ -371,16 +553,20 @@ class WorkflowRunner:
         except Exception as exc:  # noqa: BLE001 - workflow boundary must record every failure
             current = self.store.get(job_id)
             if not current or current.get("status") != "stopped":
-                self.store.update(job_id, status="failed", stage="Failed", error=str(exc))
+                failed_stage = "Fix/retest stopped — PR unchanged" if is_qa_fix else "Failed"
+                self.store.update(job_id, status="failed", stage=failed_stage, error=str(exc))
             log(f"ERROR: {exc}")
 
     def _finish_pr(
         self, job_id: str, params: dict, log, issue_ref, issue: dict, base_branch: str,
         branch_name: str, changed_repos: dict[str, Path], result: dict, review: dict,
         reviews: dict, test_plan: dict | None, github: GitHubOps, artifact_dir: Path, started_at: float,
+        existing_prs: dict[str, dict] | None = None,
     ) -> None:
-        self.approve_stage(job_id, "Committing and pushing")
-        self.stage(job_id, "Committing and pushing")
+        updating_existing = existing_prs is not None
+        push_stage = "100% passed — updating existing PR branch" if updating_existing else "Committing and pushing"
+        self.approve_stage(job_id, push_stage)
+        self.stage(job_id, push_stage)
         issue_link = f"{issue_ref.owner}/{issue_ref.repo}#{issue_ref.number}"
         repo_refs = {
             name: type(issue_ref)(owner=issue_ref.owner, repo=name, number=issue_ref.number)
@@ -391,48 +577,54 @@ class WorkflowRunner:
         }
         for repo_name, current_repo_dir in changed_repos.items():
             log(f"Committing repository: {repo_name}")
+            target_branch = (
+                existing_prs[repo_name]["headRefName"] if existing_prs is not None else branch_name
+            )
             github.commit_and_push(
                 current_repo_dir,
-                branch_name,
+                target_branch,
                 str(result["commit_message"]),
                 repo_refs[repo_name].full_name,
             )
 
-        self.approve_stage(job_id, "Creating pull request")
-        self.stage(job_id, "Creating pull request")
-        pr_urls: dict[str, str] = {}
-        for repo_name, current_repo_dir in changed_repos.items():
-            repo_artifact_dir = artifact_dir / repo_name
-            repo_artifact_dir.mkdir(parents=True, exist_ok=True)
-            default_branch = repo_metadata[repo_name].get("default_branch")
-            # A closing keyword ("Fixes") is what makes the PR appear in the
-            # issue's Development section. GitHub only auto-closes the issue when
-            # the PR merges into the default branch, so this is safe on other
-            # branches regardless of close_issue_on_merge.
-            # ponytail: closing keyword is the only body-based way to link a PR
-            # into the Development section; keep it for the issue's own repo.
-            relation = "Fixes" if repo_name == issue_ref.repo else "Relates to"
-            repo_review = reviews[repo_name]
-            pr_body = self._build_pr_body(
-                result,
-                format_review_markdown(repo_review),
-                relation,
-                issue_link,
-                base_branch,
-                default_branch,
-            )
-            title = str(result["pr_title"])
-            if len(changed_repos) > 1:
-                title = f"{title} ({repo_name})"
-            pr_urls[repo_name] = github.create_pr(
-                repo_refs[repo_name],
-                current_repo_dir,
-                base_branch,
-                branch_name,
-                title,
-                pr_body,
-                repo_artifact_dir,
-            )
+        if updating_existing:
+            self.stage(job_id, "Existing PR branch updated")
+            pr_urls = {name: existing_prs[name]["url"] for name in changed_repos}
+            log("Updated existing pull request(s): " + ", ".join(pr_urls.values()))
+        else:
+            self.approve_stage(job_id, "Creating pull request")
+            self.stage(job_id, "Creating pull request")
+            pr_urls: dict[str, str] = {}
+            for repo_name, current_repo_dir in changed_repos.items():
+                repo_artifact_dir = artifact_dir / repo_name
+                repo_artifact_dir.mkdir(parents=True, exist_ok=True)
+                default_branch = repo_metadata[repo_name].get("default_branch")
+                # A closing keyword ("Fixes") is what makes the PR appear in the
+                # issue's Development section. GitHub only auto-closes the issue when
+                # the PR merges into the default branch, so this is safe on other
+                # branches regardless of close_issue_on_merge.
+                relation = "Fixes" if repo_name == issue_ref.repo else "Relates to"
+                repo_review = reviews[repo_name]
+                pr_body = self._build_pr_body(
+                    result,
+                    format_review_markdown(repo_review),
+                    relation,
+                    issue_link,
+                    base_branch,
+                    default_branch,
+                )
+                title = str(result["pr_title"])
+                if len(changed_repos) > 1:
+                    title = f"{title} ({repo_name})"
+                pr_urls[repo_name] = github.create_pr(
+                    repo_refs[repo_name],
+                    current_repo_dir,
+                    base_branch,
+                    branch_name,
+                    title,
+                    pr_body,
+                    repo_artifact_dir,
+                )
 
         pr_url = pr_urls.get(issue_ref.repo) or next(iter(pr_urls.values()))
 
@@ -447,6 +639,8 @@ class WorkflowRunner:
             "confidence": result["confidence"],
             "summary": result["summary"],
             "root_cause": result["root_cause"],
+            "tests_run": result.get("tests_run") or [],
+            "overall": "passed" if updating_existing else None,
             "review": review,
         }
         self.store.update(job_id, result_json=partial_result)
@@ -483,6 +677,12 @@ class WorkflowRunner:
             for repo_name, current_pr_url in pr_urls.items():
                 github.assign_pr(repo_refs[repo_name], current_pr_url, github_login)
 
+        for repo_name, current_pr_url in pr_urls.items():
+            changed_paths = github.changed_paths(changed_repos[repo_name], base_branch)
+            if any(is_schema_file(path) for path in changed_paths):
+                github.assign_pr(repo_refs[repo_name], current_pr_url, "ChrisFordPVF")
+                log(f"Assigned @ChrisFordPVF because {repo_name} contains a schema or SQL change.")
+
         additions = deletions = 0
         for current_repo_dir in changed_repos.values():
             repo_additions, repo_deletions = github.diff_stat(current_repo_dir, base_branch)
@@ -500,13 +700,16 @@ class WorkflowRunner:
             "confidence": result["confidence"],
             "summary": result["summary"],
             "root_cause": result["root_cause"],
+            "tests_run": result.get("tests_run") or [],
+            "overall": "passed" if updating_existing else None,
             "review": review,
             "assignee": github_login,
             "additions": additions,
             "deletions": deletions,
             "duration_seconds": round(time.time() - started_at),
         }
-        self.store.update(job_id, status="completed", stage="Completed", result_json=final_result)
+        final_stage = "Existing PR updated — 100% pass" if updating_existing else "Completed"
+        self.store.update(job_id, status="completed", stage=final_stage, result_json=final_result)
         log("Completed: " + ", ".join(pr_urls.values()))
 
     def _comment_on_failure(
@@ -596,6 +799,19 @@ class WorkflowRunner:
     def _dict_items(items) -> list[dict]:
         """Keep agent-provided arrays safe when a CLI returns scalar items."""
         return [item for item in (items or []) if isinstance(item, dict)]
+
+    @staticmethod
+    def _is_manual_ui_skip(item: dict) -> bool:
+        """Exclude unavailable manual UI checks from automated QA evidence."""
+        if str(item.get("result", "")).lower() not in {"skipped", "not-run"}:
+            return False
+        text = f"{item.get('command', '')} {item.get('notes', '')}".lower()
+        markers = (
+            "ui interaction", "manual ui", "visual verification", "visual persistence",
+            "windows desktop session", "running app instance", "browser interaction",
+            "browser session", "desktop application", "open/close animation",
+        )
+        return any(marker in text for marker in markers)
 
     @staticmethod
     def _failure_comment(failed_stage: str, error: str, result: dict, review: dict) -> str:
@@ -818,6 +1034,7 @@ class WorkflowRunner:
     def _run_agent_gated(
         self, job_id: str, agent_command: str, workspace_dir: Path,
         result_path: Path, issue: dict, prompt: str, log,
+        *, require_all_tests_passed: bool = False,
     ) -> dict:
         """Run the coding agent, and on a gate failure (low confidence, unsafe,
         unresolved risks, failed checks) loop with a repair prompt until the
@@ -841,7 +1058,7 @@ class WorkflowRunner:
                     "Agent result",
                 )
                 self._log_agent_result(result, log)
-                self._gate_agent_result(result)
+                self._gate_agent_result(result, require_all_tests_passed=require_all_tests_passed)
                 return result
             except WorkflowError as exc:
                 job = self.store.get(job_id)
@@ -857,7 +1074,7 @@ class WorkflowRunner:
                 )
                 prompt = confidence_gate_prompt(issue, str(exc), str(result_path))
 
-    def _gate_agent_result(self, result: dict) -> None:
+    def _gate_agent_result(self, result: dict, *, require_all_tests_passed: bool = False) -> None:
         try:
             confidence = float(result["confidence"])
         except (TypeError, ValueError) as exc:
@@ -888,6 +1105,18 @@ class WorkflowRunner:
         ]
         if failed_tests:
             raise WorkflowError("The coding agent reported failed validation checks.")
+        if require_all_tests_passed:
+            tests = self._dict_items(result.get("tests_run"))
+            if not tests:
+                raise WorkflowError("The fix/retest workflow requires at least one passing test.")
+            incomplete = [
+                item for item in tests
+                if str(item.get("result", "")).lower() != "passed"
+            ]
+            if incomplete:
+                raise WorkflowError(
+                    "The fix/retest workflow requires a 100% pass rate; skipped or not-run checks remain."
+                )
 
     @staticmethod
     def _log_agent_result(result: dict, log) -> None:

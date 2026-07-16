@@ -5,7 +5,7 @@ from ticket_sync import import_workbook
 from workflow import WorkflowRunner
 
 from core import generate_test_plan, make_branch_name, parse_issue_url, parse_validation_commands, slugify, validate_ref_name
-from prompts import all_in_one_prompt
+from prompts import all_in_one_prompt, automated_qa_prompt
 
 
 def test_parse_issue_url():
@@ -65,6 +65,12 @@ def test_all_in_one_prompt_requires_confirmation_for_each_stage():
     assert 'Proceed with stage <number> (<name>)? (yes/no)' in prompt
     assert "Never combine confirmations" in prompt
     assert "7. Ask permission before creating the pull request" in prompt
+
+
+def test_automated_qa_prompt_excludes_manual_ui_verification():
+    prompt = automated_qa_prompt({"number": 7, "title": "Animation", "body": "", "labels": []}, ".qa.json")
+    assert "Manual UI testing is outside this automated report" in prompt
+    assert "Do not add UI interaction" in prompt
 
 
 def test_supplied_workbook_imports_github_tickets():

@@ -37,8 +37,9 @@
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Z"/></svg>
         <small>02</small> Prompt forge
       </a>
-      <a href="{{ url_for('leaderboard_page') }}" class="{{ 'selected' if request.endpoint == 'leaderboard_page' else '' }}"><small>03</small> Merc rankings</a>
-      <a href="{{ url_for('settings_page') }}" class="{{ 'selected' if request.endpoint == 'settings_page' else '' }}"><small>04</small> System</a>
+      <a href="{{ url_for('testing_page') }}" class="{{ 'selected' if request.endpoint == 'testing_page' else '' }}"><small>03</small> Testing lab</a>
+      <a href="{{ url_for('leaderboard_page') }}" class="{{ 'selected' if request.endpoint == 'leaderboard_page' else '' }}"><small>04</small> Merc rankings</a>
+      <a href="{{ url_for('settings_page') }}" class="{{ 'selected' if request.endpoint == 'settings_page' else '' }}"><small>05</small> System</a>
     </nav>
   </header>
   <main class="shell">{% block content %}{% endblock %}</main>
@@ -46,5 +47,48 @@
     <span class="footer-sigil" aria-hidden="true">///</span>
     <span><strong>MERGEQUEST // NEON OPS</strong> · Evidence-gated autonomous operations · Human authorization owns every merge.</span>
   </footer>
+  <div id="jackout-sequence" class="jackout-sequence" hidden aria-live="assertive" aria-label="Signing out">
+    <div class="jackout-grid" aria-hidden="true"></div>
+    <div class="jackout-core">
+      <span class="jackout-sigil" aria-hidden="true">MQ</span>
+      <p class="eyebrow">NEURAL LINK TERMINATION</p>
+      <h2 id="jackout-title">JACKING OUT</h2>
+      <div class="jackout-progress"><i></i></div>
+      <p id="jackout-status">Purging authentication shard…</p>
+    </div>
+  </div>
+  <script>
+  (() => {
+    let jackoutStarted = false;
+    async function jackOut(event) {
+      event.preventDefault();
+      if (jackoutStarted) return;
+      jackoutStarted = true;
+      const overlay = document.getElementById('jackout-sequence');
+      const title = document.getElementById('jackout-title');
+      const status = document.getElementById('jackout-status');
+      overlay.hidden = false;
+      document.body.classList.add('jacking-out');
+      setTimeout(() => { status.textContent = 'Severing GitHub uplink…'; }, 550);
+      setTimeout(() => { status.textContent = 'Wiping operator trace…'; }, 1050);
+      try {
+        await fetch(event.currentTarget.href, {credentials: 'same-origin'});
+      } catch (_) {
+        // The visual disconnect still completes if the network drops mid-sequence.
+      }
+      setTimeout(() => {
+        title.textContent = 'CONNECTION TERMINATED';
+        status.textContent = 'Safe travels, runner.';
+        overlay.classList.add('complete');
+      }, 1450);
+      setTimeout(() => {
+        window.open('', '_self');
+        window.close();
+        setTimeout(() => window.location.replace('about:blank'), 250);
+      }, 2200);
+    }
+    document.querySelectorAll('a[href="{{ url_for('logout') }}"]').forEach(link => link.addEventListener('click', jackOut));
+  })();
+  </script>
 </body>
 </html>

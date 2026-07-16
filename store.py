@@ -254,3 +254,18 @@ class JobStore:
             item["result"] = json.loads(item.pop("result_json")) if item.get("result_json") else None
             jobs.append(item)
         return jobs
+
+    def latest_for_issue(self, issue_url: str) -> dict | None:
+        """Return the newest workflow run for an issue URL."""
+        normalized = issue_url.strip().rstrip("/")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM jobs WHERE rtrim(issue_url, '/') = ? ORDER BY created_at DESC LIMIT 1",
+                (normalized,),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["parameters"] = json.loads(item.pop("parameters_json"))
+        item["result"] = json.loads(item.pop("result_json")) if item.get("result_json") else None
+        return item

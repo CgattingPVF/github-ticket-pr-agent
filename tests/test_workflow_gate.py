@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 import workflow
+from core import parse_issue_url
 from workflow import WorkflowRunner
 
 
@@ -13,6 +14,9 @@ class FakeStore:
         return {"status": "running", "parameters": {}}
 
     def append_log(self, job_id, message):
+        pass
+
+    def update(self, job_id, **fields):
         pass
 
 
@@ -78,6 +82,40 @@ def test_gate_loop_stops_after_max_attempts(monkeypatch, tmp_path):
     assert len(calls) == FakeSettings.max_gate_attempts
 
 
+def test_fix_retest_gate_retries_skipped_checks_until_everything_passes(monkeypatch, tmp_path):
+    skipped = {**_result(0.95), "tests_run": [{"command": "ui proof", "result": "not-run"}]}
+    results = iter([skipped, _result(0.95)])
+    calls = []
+    monkeypatch.setattr(workflow, "run_configured_command", lambda *a, **k: calls.append(k.get("prompt")))
+    monkeypatch.setattr(workflow, "load_json", lambda path: next(results))
+
+    runner = WorkflowRunner(FakeSettings(), FakeStore())
+    result = runner._run_agent_gated(
+        "job", "agent", tmp_path, tmp_path / "result.json", {"number": 1}, "go", lambda m: None,
+        require_all_tests_passed=True,
+    )
+
+    assert result["tests_run"][0]["result"] == "passed"
+    assert len(calls) == 2
+    assert "100% pass rate" in calls[1]
+
+
+def test_manual_ui_skip_is_excluded_from_automated_qa_evidence():
+    manual = {
+        "command": "UI interaction against the Companies page",
+        "result": "skipped",
+        "notes": "No Windows desktop session or running app instance is available.",
+    }
+    relevant = {
+        "command": "Database integration fixture",
+        "result": "skipped",
+        "notes": "Test database is unavailable.",
+    }
+
+    assert WorkflowRunner._is_manual_ui_skip(manual) is True
+    assert WorkflowRunner._is_manual_ui_skip(relevant) is False
+
+
 def test_pr_body_static_builder_handles_reported_tests():
     body = WorkflowRunner._build_pr_body(
         _result(0.95),
@@ -90,6 +128,50 @@ def test_pr_body_static_builder_handles_reported_tests():
 
     assert "`t`: **passed**" in body
     assert "Fixes acme/widgets#42" in body
+
+
+def test_finish_pr_updates_existing_branch_without_creating_another_pr(tmp_path):
+    pushes = []
+
+    class ExistingPrGitHub:
+        def get_repository(self, ref):
+            return {"default_branch": "main"}
+
+        def commit_and_push(self, repo_dir, branch_name, commit_message, expected_repository):
+            pushes.append((branch_name, expected_repository))
+
+        def create_pr(self, *args, **kwargs):
+            raise AssertionError("fix/retest must not create a PR")
+
+        def post_review(self, *args, **kwargs):
+            pass
+
+        def comment_on_issue(self, *args, **kwargs):
+            pass
+
+        def changed_paths(self, *args, **kwargs):
+            return []
+
+        def diff_stat(self, *args, **kwargs):
+            return (1, 0)
+
+    runner = WorkflowRunner(FakeSettings(), FakeStore())
+    ref = parse_issue_url("https://github.com/acme/widgets/issues/42")
+    pr = {
+        "url": "https://github.com/acme/widgets/pull/9",
+        "headRefName": "bug-fix/42-existing",
+        "baseRefName": "main",
+    }
+    review = {"verdict": "PASS", "summary": "clean", "findings": []}
+    runner._finish_pr(
+        "job", {}, lambda message: None, ref,
+        {"html_url": "https://github.com/acme/widgets/issues/42"},
+        "main", "unused-new-branch", {"widgets": tmp_path}, _result(0.95), review,
+        {"widgets": review}, None, ExistingPrGitHub(), tmp_path, time.time(),
+        existing_prs={"widgets": pr},
+    )
+
+    assert pushes == [("bug-fix/42-existing", "acme/widgets")]
 
 
 def test_ticket_pr_comment_uses_full_template_and_runtime_values():

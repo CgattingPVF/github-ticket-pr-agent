@@ -64,6 +64,20 @@ cp .env.example .env
 
 ## Build a Windows executable
 
+On a Windows machine with Python 3.10 or newer installed, run:
+
+```powershell
+.\build-windows.ps1
+```
+
+The script creates an isolated build environment, installs the application and
+PyInstaller dependencies, runs the tests, and writes the executable to
+`dist\ticket-pr-agent.exe`. To build without rerunning the tests, use
+`.\build-windows.ps1 -SkipTests`.
+
+PyInstaller builds for the operating system it runs on, so the Windows `.exe`
+must be produced on Windows (or by the Windows GitHub Actions runner below).
+
 The repository includes a GitHub Actions workflow at `.github/workflows/release-windows.yml`.
 
 When a GitHub Release is published, the workflow:

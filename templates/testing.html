@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Testing lab · Neon Ops{% endblock %}
+{% block content %}
+<section class="lab-head testing-hero"><div><p class="eyebrow">BLACKWALL // AUTONOMOUS QA GRID</p><h1>Integrity scanner</h1><p>Lock onto a ticket and pull the latest automated test telemetry from its workflow run. No manual checkbox ritual—just machine evidence.</p></div><div class="scanner-orb" aria-hidden="true"><i></i><span>LIVE</span></div></section>
+
+<section class="gh-box testing-target">
+  <header class="gh-box-header"><strong>Target uplink</strong><span class="board-hint">ENCRYPTED GITHUB COORDINATES</span></header>
+  <div class="form-body testing-load-row">
+    <label>Ticket URL<input id="testing-issue-url" type="url" placeholder="https://github.com/owner/repository/issues/123"></label>
+    <label>QA daemon<select id="testing-provider"><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label>
+    <button id="generate-tests" class="btn btn-primary scan-trigger" type="button" onclick="runAutomatedTests()">Run autonomous QA</button>
+  </div>
+</section>
+
+<section id="testing-workspace" class="gh-box testing-workspace" hidden>
+  <header class="gh-box-header"><strong id="testing-ticket-title">Integrity feed</strong><div class="testing-ticket-actions"><span id="testing-ticket-meta" class="board-hint"></span><a id="open-testing-ticket" class="btn btn-compact" href="#" target="_blank" rel="noopener" hidden>Open ticket ↗</a></div></header>
+  <div class="form-body">
+    <div id="test-job-state" class="test-job-state"></div>
+    <section class="qa-console-shell">
+      <header><span class="console-lights"><i></i><i></i><i></i></span><strong>LIVE DAEMON TRACE</strong><small>READ-ONLY TELEMETRY</small></header>
+      <div id="qa-console" class="qa-console" aria-live="polite"><div class="feed-line feed-meta">BOOTING QA TELEMETRY…</div></div>
+    </section>
+    <div id="test-checklist" class="test-checklist"></div>
+    <div id="qa-repair-actions" class="qa-repair-actions" hidden><div><strong>BLACK ICE BREACH DETECTED</strong><span>Repair locally, prove every check, then update the linked open PR.</span></div><button id="qa-fix-button" class="btn btn-primary" type="button" onclick="fixAndRetest()">Fix + retest to 100%</button></div>
+    <div class="testing-submit-row"><span id="testing-status" class="sync-status" role="status"></span><span class="board-hint">AUTO-UPLINK // REPORT POSTS ON COMPLETION</span></div>
+  </div>
+</section>
+
+<script>
+let currentTestPlan = null;
+const escapeTestHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function renderAutomatedTests(data) {
+  currentTestPlan = data;
+  const ticketUrl = data.ticket_url || data.issue?.url;
+  const ticketLink = document.getElementById('open-testing-ticket');
+  if (ticketUrl) { ticketLink.href = ticketUrl; ticketLink.hidden = false; }
+  const isManualUiSkip = item => {
+    if (!['skipped', 'not-run'].includes(String(item.result).toLowerCase())) return false;
+    const text = `${item.command || ''} ${item.notes || ''}`.toLowerCase();
+    return ['ui interaction', 'manual ui', 'visual verification', 'visual persistence', 'windows desktop session', 'running app instance', 'browser interaction', 'browser session', 'desktop application', 'open/close animation'].some(marker => text.includes(marker));
+  };
+  const checks = (data.checks || data.tests_run || []).map((item, index) => ({...item, sourceIndex: index})).filter(item => !isManualUiSkip(item));
+  const normalizeStatus = value => ({passed: 'passed', failed: 'failed', skipped: 'skipped', 'not-run': 'skipped'}[String(value).toLowerCase()] || 'skipped');
+  document.getElementById('test-checklist').innerHTML = checks.length ? `<h2>Automated validation telemetry</h2>${checks.map((item, index) => {
+    const status = normalizeStatus(item.result);
+    const override = item.operator_override;
+    const audit = override ? `<span class="override-audit">OPERATOR OVERRIDE · machine result: ${escapeTestHtml(item.automated_result || 'unknown').toUpperCase()} · ${escapeTestHtml(override.reason)}</span>` : '';
+    const controls = data.override_allowed && data.job_id ? `<div class="test-override-controls"><span>Set outcome</span><button type="button" onclick="overrideTest(${item.sourceIndex}, 'passed')">PASS</button><button type="button" onclick="overrideTest(${item.sourceIndex}, 'failed')">FAIL</button><button type="button" onclick="overrideTest(${item.sourceIndex}, 'skipped')">SKIP</button>${override ? `<button class="override-reset" type="button" onclick="overrideTest(${item.sourceIndex}, 'original')">RESET</button>` : ''}</div>` : '';
+    return `<article class="auto-test auto-test-${status}" data-step="${escapeTestHtml(item.command || 'Automated check')}" data-status="${status}" data-notes="${escapeTestHtml(item.notes || '')}"><span class="test-signal">${status === 'passed' ? '✓' : status === 'failed' ? '×' : '–'}</span><div class="auto-test-copy"><strong>${escapeTestHtml(item.command || `Automated check ${index + 1}`)}</strong><small>${escapeTestHtml(item.notes || 'No additional runner notes')}</small>${audit}${controls}</div><b>${status.toUpperCase()}</b></article>`;
+  }).join('')}` : '<div class="telemetry-empty"><strong>QA DAEMON INITIALIZING</strong><span>Reading ticket and constructing proof strategy…</span></div>';
+  document.getElementById('qa-repair-actions').hidden = !data.job_id || String(data.overall).toLowerCase() === 'passed';
+}
+
+function updateLiveFeed(job) {
+  const consoleEl = document.getElementById('qa-console');
+  const decodeEvent = line => {
+    if (!line.trim().startsWith('{')) return [line];
+    try {
+      const event = JSON.parse(line); const item = event.item || {};
+      if (item.type === 'agent_message' && item.text) return [item.text];
+      if (item.type === 'command_execution') {
+        if (event.type === 'item.started') return [`$ ${item.command || 'command'}`];
+        const output = String(item.aggregated_output || '').trim().split('\n').filter(Boolean);
+        const result = item.exit_code === 0 ? '[PASS · exit 0]' : `[FAIL · exit ${item.exit_code ?? '?'}]`;
+        return [...output, result];
+      }
+      if (event.type === 'thread.started') return ['▸ Codex session online'];
+      if (event.type === 'turn.started') return ['◇ Agent is analysing the ticket and workspace'];
+      if (event.type === 'turn.completed') return ['✓ Agent turn complete'];
+      return [];
+    } catch (_) { return [line]; }
+  };
+  const classify = line => {
+    if (/^== .* ==$/.test(line)) return 'feed-stage';
+    if (/^\$ /.test(line)) return 'feed-command';
+    if (/^(✓|\[PASS|Completed:|PASS\b)/i.test(line) || /\b\d+ pass\b/i.test(line)) return 'feed-success';
+    if (/^(ERROR:|\[FAIL|FAIL\b)/i.test(line) || /\b\d+ fail\b/i.test(line)) return 'feed-error';
+    if (/^(▸|◇|\/\/)/.test(line)) return 'feed-meta';
+    return 'feed-output';
+  };
+  const lines = String(job.logs || '').split('\n').filter(Boolean).flatMap(decodeEvent).filter(Boolean).slice(-120);
+  const visible = lines.length ? lines : [`// ${job.stage || 'Preparing agent'}…`];
+  consoleEl.innerHTML = visible.map(line => `<div class="feed-line ${classify(line)}">${escapeTestHtml(line)}</div>`).join('');
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function updateJobState(prefix, job) {
+  const state = document.getElementById('test-job-state');
+  state.textContent = `${prefix} ${job.id} // ${job.status.toUpperCase()} // ${job.stage}`;
+  state.dataset.status = job.status;
+}
+
+async function overrideTest(index, status) {
+  if (!currentTestPlan?.job_id) return;
+  const reason = status === 'original' ? '' : window.prompt('Why should this automated result be overridden?');
+  if (status !== 'original' && (!reason || !reason.trim())) return;
+  try {
+    const response = await fetch(`/testing/jobs/${currentTestPlan.job_id}/override`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({index, status, reason: reason?.trim() || ''}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to save operator override');
+    currentTestPlan = {job_id: currentTestPlan.job_id, ...data.result};
+    renderAutomatedTests(currentTestPlan);
+    const projectState = data.result.project_status?.updated ? ' // GITHUB: DONE · TEST STATE: PASS' : '';
+    document.getElementById('testing-status').textContent = data.warning || `OPERATOR OVERRIDE SAVED // ${data.result.overall.toUpperCase()}${projectState}`;
+  } catch (error) {
+    document.getElementById('testing-status').textContent = `OVERRIDE ERROR // ${error.message}`;
+  }
+}
+
+async function runAutomatedTests() {
+  const issueUrl = document.getElementById('testing-issue-url').value.trim();
+  const button = document.getElementById('generate-tests');
+  if (!issueUrl) { alert('Enter a GitHub issue URL first.'); return; }
+  button.disabled = true; button.textContent = 'Deploying QA daemon…';
+  try {
+    const response = await fetch('/testing/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({issue_url: issueUrl, provider: document.getElementById('testing-provider').value})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to deploy QA daemon');
+    document.getElementById('testing-workspace').hidden = false;
+    renderAutomatedTests({checks: [], ticket_url: issueUrl});
+    document.getElementById('testing-workspace').scrollIntoView({behavior: 'smooth'});
+    while (true) {
+      await wait(1500);
+      const jobResponse = await fetch(`/api/jobs/${data.job_id}`);
+      const job = await jobResponse.json();
+      updateJobState('RUN', job);
+      updateLiveFeed(job);
+      if (job.status === 'completed') {
+        currentTestPlan = {issue: {url: issueUrl}, job_id: job.id, ...job.result}; renderAutomatedTests(currentTestPlan);
+        document.getElementById('testing-status').textContent = 'QA report attached to GitHub ticket.';
+        break;
+      }
+      if (['failed', 'stopped', 'closed'].includes(job.status)) throw new Error(job.error || 'QA daemon stopped');
+    }
+  } catch (error) { document.getElementById('testing-status').textContent = `QA STOPPED // ${error.message}`; }
+  finally { button.disabled = false; button.textContent = 'Run autonomous QA'; }
+}
+
+async function fixAndRetest() {
+  if (!currentTestPlan?.job_id) return;
+  const button = document.getElementById('qa-fix-button');
+  button.disabled = true; button.textContent = 'Repair daemon active…';
+  try {
+    const response = await fetch(`/testing/jobs/${currentTestPlan.job_id}/fix`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({provider: document.getElementById('testing-provider').value})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to start repair');
+    document.getElementById('qa-repair-actions').hidden = true;
+    while (true) {
+      await wait(1500);
+      const job = await (await fetch(`/api/jobs/${data.job_id}`)).json();
+      updateJobState('REPAIR', job);
+      updateLiveFeed(job);
+      if (job.status === 'completed') {
+        currentTestPlan = {job_id: job.id, ...job.result}; renderAutomatedTests(currentTestPlan);
+        document.getElementById('testing-status').innerHTML = `100% PASS // OPEN PR UPDATED · <a href="${escapeTestHtml(job.result.pr_url)}" target="_blank">VIEW PR</a>`;
+        break;
+      }
+      if (['failed', 'stopped', 'closed'].includes(job.status)) throw new Error(job.error || 'Repair stopped; PR was not updated');
+    }
+  } catch (error) { document.getElementById('testing-status').textContent = `REPAIR STOPPED // ${error.message}`; }
+  finally { button.disabled = false; button.textContent = 'Fix + retest to 100%'; }
+}
+</script>
+{% endblock %}

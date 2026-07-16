@@ -187,6 +187,44 @@ Base every step only on what the ticket states or clearly implies. Keep each lis
 """.strip()
 
 
+def automated_qa_prompt(issue: dict, result_path: str) -> str:
+    """Build a read-only, evidence-first QA run for a ticket."""
+    issue_payload = {
+        "number": issue.get("number"), "title": issue.get("title"),
+        "body": issue.get("body") or "",
+        "labels": [label.get("name") for label in issue.get("labels", [])],
+    }
+    return f"""
+You are the independent QA agent for this GitHub ticket:
+{json.dumps(issue_payload, indent=2)}
+
+Work inside the CRM_APP_PVF workspace. Read its repository instructions and inspect the relevant
+crm-staff-desktop and/or crm-api code. This is TESTING ONLY: do not fix production code, commit,
+push, create a branch or PR, or access GitHub. Do not leave any repository file changed. You may
+create a temporary proof harness only if you delete it before finishing.
+
+Derive concrete assertions from the ticket, then automatically prove as many as the current code
+and environment allow. Prefer focused existing tests and safe read-only checks. Run the actual
+commands and report their real exit status; never invent a pass.
+
+Manual UI testing is outside this automated report. Do not add UI interaction, visual appearance,
+browser/window behaviour, a missing Windows desktop session, or a missing running application as
+passed, failed, or skipped test entries. Those checks are performed separately by a human tester.
+Use automated unit/integration tests, builds, type checks, static inspection, and other executable
+non-UI evidence only. A skipped entry is allowed only for relevant non-UI automation infrastructure.
+
+Write `{result_path}` as JSON with exactly this shape:
+{{
+  "summary": "short evidence-based QA conclusion",
+  "overall": "passed|failed|incomplete",
+  "tests_run": [
+    {{"command": "exact command or proof performed", "result": "passed|failed|skipped", "notes": "observed evidence"}}
+  ]
+}}
+Include at least one test result. A command that was not executed cannot be marked passed.
+""".strip()
+
+
 def confidence_gate_prompt(issue: dict, error: str, result_path: str = ".ticket-agent/result.json") -> str:
     return f"""
 The automated workflow for GitHub ticket #{issue.get('number')} rejected your last `{result_path}` for this reason:

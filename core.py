@@ -236,6 +236,51 @@ def _format_stream_json_line(line: str) -> str:
     return ""  # tool_result / user echoes — skip the noise
 
 
+def _format_codex_json_line(line: str) -> str:
+    """Turn a Codex ``--json`` event into readable live-feed text."""
+    stripped = line.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return line.rstrip("\r\n")
+    try:
+        event = json.loads(stripped)
+    except json.JSONDecodeError:
+        return line.rstrip("\r\n")
+    if not isinstance(event, dict):
+        return ""
+    etype = event.get("type")
+    if etype == "thread.started":
+        thread_id = str(event.get("thread_id", ""))
+        return f"▸ Codex session online · {thread_id[:18]}" if thread_id else "▸ Codex session online"
+    if etype == "turn.started":
+        return "◇ Agent is analysing the ticket and workspace"
+    if etype == "turn.completed":
+        usage = event.get("usage") or {}
+        output = usage.get("output_tokens")
+        return f"✓ Agent turn complete · {output} output tokens" if output is not None else "✓ Agent turn complete"
+    item = event.get("item") or {}
+    if not isinstance(item, dict):
+        return ""
+    item_type = item.get("type")
+    if item_type == "agent_message" and item.get("text"):
+        return str(item["text"]).strip()
+    if item_type == "command_execution":
+        command = " ".join(str(item.get("command") or "").split())
+        if len(command) > 260:
+            command = command[:257] + "..."
+        if etype == "item.started":
+            return f"$ {command}" if command else ""
+        output = str(item.get("aggregated_output") or "").strip()
+        exit_code = item.get("exit_code")
+        status = "PASS" if exit_code == 0 else "FAIL"
+        footer = f"[{status} · exit {exit_code}]" if exit_code is not None else f"[{str(item.get('status', 'done')).upper()}]"
+        return "\n".join(part for part in (output, footer) if part)
+    if item_type == "file_change" and etype == "item.completed":
+        changes = item.get("changes") or []
+        paths = [str(change.get("path")) for change in changes if isinstance(change, dict) and change.get("path")]
+        return "✎ Updated " + ", ".join(paths) if paths else "✎ Workspace files updated"
+    return ""
+
+
 def run_configured_command(
     command: str,
     *,
@@ -259,6 +304,11 @@ def run_configured_command(
     if "stream-json" in args:
         def effective_log(line: str, _log: Callable[[str], None] = log) -> None:
             text = _format_stream_json_line(line)
+            if text:
+                _log(text)
+    elif "--json" in args and os.path.basename(args[0]) == "codex":
+        def effective_log(line: str, _log: Callable[[str], None] = log) -> None:
+            text = _format_codex_json_line(line)
             if text:
                 _log(text)
     return run_command(

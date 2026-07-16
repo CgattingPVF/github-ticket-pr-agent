@@ -8,6 +8,9 @@ on:
       - '.github/workflows/release-windows.yml'
       - '*.py'
       - 'requirements.txt'
+      - 'requirements-build.txt'
+      - 'build-windows.ps1'
+      - 'templates/**'
       - 'static/**'
       - 'tests/**'
   workflow_dispatch:
@@ -91,7 +94,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pyinstaller
+          python -m pip install -r requirements-build.txt
 
       - name: Run tests
         run: python -m pytest -q
@@ -101,6 +104,7 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
             --name ticket-pr-agent `
+            --add-data "templates;templates" `
             --add-data "static;static" `
             launcher.py
 
