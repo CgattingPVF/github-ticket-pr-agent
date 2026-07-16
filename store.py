@@ -102,7 +102,7 @@ class JobStore:
                       title=excluded.title, state=excluded.state, labels=excluded.labels,
                       assignees=excluded.assignees,
                       priority=CASE WHEN excluded.source = 'github' THEN excluded.priority WHEN excluded.priority <> '' THEN excluded.priority ELSE tickets.priority END,
-                      project_status=CASE WHEN excluded.project_status <> '' THEN excluded.project_status ELSE tickets.project_status END,
+                      project_status=CASE WHEN excluded.source = 'github' THEN excluded.project_status WHEN excluded.project_status <> '' THEN excluded.project_status ELSE tickets.project_status END,
                       issue_type=excluded.issue_type,
                       created_at=excluded.created_at, updated_at=excluded.updated_at,
                       synced_at=excluded.synced_at, source=excluded.source""",
@@ -112,14 +112,16 @@ class JobStore:
                         'updated_at', 'synced_at', 'source')),
                 )
 
-    def list_tickets(self, limit: int = 20, state: str = 'OPEN') -> list[dict]:
+    def list_tickets(self, limit: int | None = None, state: str = 'OPEN') -> list[dict]:
         query = "SELECT tickets.*, ticket_tests.repro_steps AS test_repro_steps, ticket_tests.pass_steps AS test_pass_steps FROM tickets LEFT JOIN ticket_tests ON ticket_tests.key = tickets.key"
         params: list[object] = []
         if state:
-            query += " WHERE upper(state) = upper(?) AND lower(trim(project_status)) NOT IN ('in progress', 'in review', 'done', 'ready for build', 'closed', 'complete', 'completed')"
+            query += " WHERE upper(state) = upper(?) AND replace(lower(trim(project_status)), '-', ' ') NOT LIKE 'in progress%' AND lower(trim(project_status)) NOT IN ('done', 'ready for build', 'closed', 'complete', 'completed', 'pr ready')"
             params.append(state)
-        query += " ORDER BY CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END, CASE WHEN lower(labels) LIKE '%regression%' THEN 0 WHEN lower(labels) LIKE '%bug%' THEN 1 ELSE 2 END, CASE lower(trim(project_status)) WHEN 'ready for build' THEN 0 WHEN 'in progress' THEN 1 ELSE 2 END, updated_at ASC LIMIT ?"
-        params.append(limit)
+        query += " ORDER BY CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END, CASE WHEN lower(labels) LIKE '%regression%' THEN 0 WHEN lower(labels) LIKE '%bug%' THEN 1 ELSE 2 END, CASE lower(trim(project_status)) WHEN 'ready for build' THEN 0 WHEN 'in progress' THEN 1 ELSE 2 END, updated_at ASC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
         with self._connect() as connection:
             rows = [dict(row) for row in connection.execute(query, params).fetchall()]
         for row in rows:

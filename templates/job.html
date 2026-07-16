@@ -1,13 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Mission {{ job.id }} · MergeQuest{% endblock %}
+{% block title %}{{ 'Ghost Protocol' if job.parameters.workflow_profile == 'investigate_fix' else 'Autonomous Daemon' }} {{ job.id }} · Neon Ops{% endblock %}
 {% block content %}
+{% set ghost = job.parameters.workflow_profile == 'investigate_fix' %}
 <div id="job" data-job-id="{{ job.id }}">
-  <nav class="crumbs"><a href="{{ url_for('index') }}">Runs</a><span>/</span><strong>{{ job.id }}</strong></nav>
+  <nav class="crumbs"><a href="{{ url_for('index') }}">CONTRACTS</a><span>//</span><strong>OP-{{ job.id }}</strong></nav>
 
   <section class="mission-head">
     <div>
       <h1 id="stage">{{ job.stage }}</h1>
-      <p class="mission-target"><a href="{{ job.issue_url }}" target="_blank" rel="noreferrer">{{ job.issue_url|replace('https://github.com/', '') }}</a> · base <code>{{ job.base_branch }}</code> · started {{ job.created_at[:16].replace('T', ' ') }}</p>
+      <p class="mission-target"><a href="{{ job.issue_url }}" target="_blank" rel="noreferrer">{{ job.issue_url|replace('https://github.com/', '') }}</a> // INSERTION <code>{{ job.base_branch }}</code> // JACKED IN {{ job.created_at[:16].replace('T', ' ') }}</p>
     </div>
     <span id="status" class="state state-lg state-{{ job.status }}">{{ job.status|replace('_', ' ') }}</span>
   </section>
@@ -15,51 +16,52 @@
   <div id="victory-banner" class="banner banner-victory" {% if job.status != 'completed' %}hidden{% endif %}>
     <span class="banner-icon">✓</span>
     <div class="victory-copy">
-      <strong>Equilibrium reached</strong><small>A reviewed pull request is waiting for your merge decision.</small>
+      <strong>{{ 'Ghost Protocol complete // intelligence recovered' if ghost else 'Contract complete // target patched' }}</strong><small>{{ 'Source changes and validation remain local. No commit, push, or pull request was created.' if ghost else 'A reviewed pull request is deployed and awaiting human merge authorization.' }}</small>
       <div id="victory-stats" class="victory-stats"></div>
     </div>
   </div>
   <div id="intel-banner" class="banner banner-intel" {% if job.status != 'failed' %}hidden{% endif %}>
     <span class="banner-icon">i</span>
-    <div><strong>Run blocked</strong><small>The blocker was diagnosed and documented so the next run starts smarter.</small></div>
+    <div><strong>Contract interrupted</strong><small>SC +20 // actionable intelligence recovered for the next insertion.</small></div>
   </div>
   <div id="error-box" class="flash flash-error" {% if not job.error %}hidden{% endif %}>{{ job.error or '' }}</div>
 
   <div id="approval-box" class="gh-box approval-box" {% if job.status != 'waiting_approval' %}hidden{% endif %}>
     <div class="approval-copy">
-      <strong>Decision point</strong>
+      <strong>Human authorization required</strong>
       <p id="approval-message">{{ job.approval_message }}</p>
-      <small>Stop here and keep what's been learned, or continue toward the merge.</small>
+      <small>{{ 'Authorize the next investigation stage or sever the connection with recovered intel intact.' if ghost else 'Authorize the next breach stage or sever the connection with recovered intel intact.' }}</small>
     </div>
     <div class="approval-actions">
-      <button id="approve-button" class="btn btn-primary" onclick="approve('approve')">Continue</button>
-      <button id="reject-button" class="btn btn-danger" onclick="approve('reject')">Stop here</button>
+      <button id="approve-button" class="btn btn-primary" onclick="approve('approve')">Authorize breach</button>
+      <button id="reject-button" class="btn btn-danger" onclick="approve('reject')">Sever connection</button>
     </div>
   </div>
 
   <div class="mission-grid">
     <aside class="gh-box checks-box">
-      <header class="gh-box-header"><strong>Gates</strong><span id="gates-progress"></span></header>
+        <header class="gh-box-header"><strong>{{ 'Investigation stages' if ghost else 'Security gates' }}</strong><span id="gates-progress"></span></header>
       <ol id="stage-checks" class="stage-checks"></ol>
       <div class="checks-actions">
-        <button id="stop-button" class="btn btn-danger-outline" onclick="stopJob()">Stop run</button>
-        <button id="close-button" class="btn" onclick="closeJob()">Archive run</button>
+        <button id="stop-button" class="btn btn-danger-outline" onclick="stopJob()">Kill process</button>
+        <button id="continue-pr-button" class="btn btn-primary" onclick="continuePr()" hidden>{{ 'Promote to PR' if ghost else 'Deploy payload' }}</button>
+        <button id="close-button" class="btn" onclick="closeJob()">{{ 'Archive investigation' if ghost else 'Archive operation' }}</button>
       </div>
     </aside>
 
     <div class="mission-main">
       <section id="result-box" class="gh-box result-box" {% if not job.result %}hidden{% endif %}>
-        <header class="gh-box-header"><strong>Result</strong></header>
+          <header class="gh-box-header"><strong>{{ 'Recovered ghost intelligence' if ghost else 'Recovered intelligence' }}</strong></header>
         <div class="result-body">
           <p id="summary" class="result-summary">{{ job.result.summary if job.result else '' }}</p>
           <dl>
-            <dt>Root cause</dt><dd id="root-cause">{{ job.result.root_cause if job.result else '' }}</dd>
-            <dt>Branch</dt><dd><code id="branch">{{ job.result.branch_name if job.result else '' }}</code></dd>
-            <dt>Confidence</dt><dd>
+            <dt>{{ 'Observed cause' if ghost else 'Intrusion vector' }}</dt><dd id="root-cause">{{ job.result.root_cause if job.result else '' }}</dd>
+            <dt>Escape route</dt><dd><code id="branch">{{ job.result.branch_name if job.result else '' }}</code></dd>
+            <dt>Neural confidence</dt><dd>
               <span class="conf-meter"><i id="confidence-bar" style="width: {{ (job.result.confidence * 100)|round|int if job.result else 0 }}%"></i></span>
               <span id="confidence">{% if job.result %}{{ (job.result.confidence * 100)|round|int }}%{% endif %}</span>
             </dd>
-            <dt>Pull requests</dt><dd id="pr-links">
+            <dt>{{ 'Remote payloads' if not ghost else 'Remote payloads' }}</dt><dd id="pr-links">
               {% if job.result and job.result.pr_urls %}
                 {% for repository, url in job.result.pr_urls.items() %}<div><a href="{{ url }}" target="_blank" rel="noreferrer">{{ repository }}: {{ url|replace('https://github.com/', '') }}</a></div>{% endfor %}
               {% elif job.result and job.result.pr_url %}
@@ -72,8 +74,8 @@
 
       <section class="gh-box feed-box">
         <header class="gh-box-header log-heading">
-          <div><strong>Live feed</strong><span>updates automatically while the run is active</span></div>
-          <button id="log-view-toggle" class="btn btn-small" type="button">Show raw log</button>
+          <div><strong>System telemetry</strong><span>live encrypted operation feed</span></div>
+          <button id="log-view-toggle" class="btn btn-small" type="button">Open raw signal</button>
         </header>
         <div id="activity-log" class="activity-log" role="log" aria-live="polite"></div>
         <pre id="logs" class="logs" hidden>{{ job.logs }}</pre>
@@ -94,7 +96,7 @@ function fireConfetti() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
   const ctx = canvas.getContext('2d');
-  const colors = ['#58a6ff', '#3fb950', '#a371f7', '#d29922', '#f85149'];
+  const colors = ['#00f0ff', '#39ff88', '#ff2a9d', '#fcee09', '#ff174f'];
   const pieces = Array.from({length: 140}, () => ({
     x: Math.random() * canvas.width,
     y: -20 - Math.random() * canvas.height * 0.5,
@@ -132,17 +134,18 @@ function renderVictoryStats(result) {
   if (typeof duration === 'number') {
     const mins = Math.floor(duration / 60);
     const secs = duration % 60;
-    stats.push(['Time taken', mins ? `${mins}m ${secs}s` : `${secs}s`]);
+    stats.push(['Trace time', mins ? `${mins}m ${secs}s` : `${secs}s`]);
   }
   if (typeof result.additions === 'number' || typeof result.deletions === 'number') {
-    stats.push(['Lines changed', `+${result.additions || 0} / -${result.deletions || 0}`]);
+    stats.push(['Payload delta', `+${result.additions || 0} / -${result.deletions || 0}`]);
   }
   if (typeof result.confidence === 'number') {
-    stats.push(['Confidence', `${Math.round(result.confidence * 100)}%`]);
+    stats.push(['Neural sync', `${Math.round(result.confidence * 100)}%`]);
   }
   if (result.assignee) {
-    stats.push(['Assigned to', `@${result.assignee}`]);
+    stats.push(['Handler', `@${result.assignee}`]);
   }
+  stats.push(['Street cred', '+120 SC']);
   box.replaceChildren(...stats.map(([label, value]) => {
     const el = document.createElement('span');
     el.className = 'victory-stat';
@@ -153,13 +156,30 @@ function renderVictoryStats(result) {
 let rawLog = {{ job.logs|tojson }};
 let currentJob = {stage: {{ job.stage|tojson }}, status: {{ job.status|tojson }}};
 
-const GATES = [
-  'Checking GitHub access', 'Reading ticket', 'Cloning repository',
-  'Investigating and implementing', 'Running validation', 'Reviewing the change',
-  'Committing and pushing', 'Creating pull request', 'Posting code review',
-  'Linking original ticket', 'Completed',
-];
+const GATES = {{ (['Checking GitHub access', 'Reading ticket', 'Cloning repository', 'Investigating and implementing', 'Running validation', 'Reviewing the change', 'Code written (PR skipped)', 'Completed'] if ghost else ['Checking GitHub access', 'Reading ticket', 'Cloning repository', 'Investigating and implementing', 'Running validation', 'Reviewing the change', 'Committing and pushing', 'Creating pull request', 'Posting code review', 'Linking original ticket', 'Completed'])|tojson }};
 const GATE_ALIASES = {'Repairing review findings': 'Reviewing the change', 'Re-running validation': 'Running validation', 'Starting': 'Checking GitHub access', 'Queued': 'Checking GitHub access'};
+if ({{ 'true' if ghost else 'false' }}) GATE_ALIASES['Code written (PR skipped)'] = 'Code written (PR skipped)';
+const GATE_LABELS = {
+  'Checking GitHub access': 'NEURAL HANDSHAKE',
+  'Reading ticket': 'DECRYPT CONTRACT',
+  'Cloning repository': 'MIRROR NETWORK',
+  'Investigating and implementing': 'BREACH + PATCH',
+  'Running validation': 'INTEGRITY SCAN',
+  'Reviewing the change': 'BLACK ICE AUDIT',
+  'Committing and pushing': 'ENCRYPT PAYLOAD',
+  'Creating pull request': 'DEPLOY PAYLOAD',
+  'Posting code review': 'COUNTER-INTEL DROP',
+  'Linking original ticket': 'CLOSE CONTRACT LOOP',
+  'Completed': 'OPERATION COMPLETE',
+  'Code written (PR skipped)': 'LOCAL INTEL SECURED',
+};
+
+function stageLabel(stage) {
+  for (const [prefix, target] of Object.entries(GATE_ALIASES)) {
+    if (stage.startsWith(prefix)) return GATE_LABELS[target] || stage;
+  }
+  return GATE_LABELS[stage] || stage;
+}
 
 function gateIndex(stage) {
   for (const [prefix, target] of Object.entries(GATE_ALIASES)) {
@@ -187,11 +207,11 @@ function renderGates() {
       else { cls = 'pending'; icon = '○'; }
     }
     item.className = `gate ${cls}`;
-    item.innerHTML = `<span class="gate-icon">${icon}</span><span>${gate}</span>` + (index === current && !done ? '<em class="gate-now">now</em>' : '');
+    item.innerHTML = `<span class="gate-icon">${icon}</span><span>${GATE_LABELS[gate] || gate}</span>` + (index === current && !done ? '<em class="gate-now">LIVE</em>' : '');
     list.appendChild(item);
   });
   const passed = done ? GATES.length : current;
-  document.getElementById('gates-progress').textContent = `${passed}/${GATES.length} gates`;
+  document.getElementById('gates-progress').textContent = `${String(passed).padStart(2, '0')}/${GATES.length} ICE`;
 }
 
 function activityItem(kind, title, detail = '') {
@@ -216,42 +236,42 @@ function activityItem(kind, title, detail = '') {
 
 function codexEvent(event) {
   const item = event.item || {};
-  if (event.type === 'thread.started') return ['info', 'Coding agent started', 'A new agent session is ready.'];
-  if (event.type === 'turn.started') return ['running', 'Coding agent is working', 'Investigating the ticket and repository.'];
-  if (event.type === 'turn.completed') return ['success', 'Coding agent finished', event.usage ? `Tokens used: ${event.usage.output_tokens || 0} output` : ''];
-  if (event.type === 'turn.failed' || event.type === 'error') return ['error', 'Coding agent error', event.error?.message || event.message || ''];
-  if (item.type === 'agent_message' && item.text) return ['agent', 'Agent update', item.text];
-  if (item.type === 'reasoning' && item.text) return ['agent', 'Agent is investigating', item.text];
+  if (event.type === 'thread.started') return ['info', 'RUNNER JACKED IN', 'Encrypted agent channel established.'];
+  if (event.type === 'turn.started') return ['running', 'RUNNER BREACHING', 'Scanning the contract and target network.'];
+  if (event.type === 'turn.completed') return ['success', 'RUNNER CYCLE COMPLETE', event.usage ? `Neural load: ${event.usage.output_tokens || 0} output tokens` : ''];
+  if (event.type === 'turn.failed' || event.type === 'error') return ['error', 'RUNNER SIGNAL LOST', event.error?.message || event.message || ''];
+  if (item.type === 'agent_message' && item.text) return ['agent', 'RUNNER TRANSMISSION', item.text];
+  if (item.type === 'reasoning' && item.text) return ['agent', 'DEEP SCAN ACTIVE', item.text];
   if (item.type === 'command_execution') {
     const command = item.command || 'Command';
-    if (event.type === 'item.started') return ['command', 'Running command', command];
+    if (event.type === 'item.started') return ['command', 'EXECUTING QUICKHACK', command];
     const failed = Number(item.exit_code) !== 0;
-    return [failed ? 'error' : 'success', failed ? 'Command failed' : 'Command completed', command];
+    return [failed ? 'error' : 'success', failed ? 'QUICKHACK REJECTED' : 'QUICKHACK CLEARED', command];
   }
-  if (item.type === 'file_change') return ['success', 'Files updated', item.path || item.file_path || 'The agent applied a code change.'];
+  if (item.type === 'file_change') return ['success', 'PAYLOAD INJECTED', item.path || item.file_path || 'The runner altered the target.'];
   return false;
 }
 
 function claudeEvent(event) {
-  if (event.type === 'system' && event.subtype === 'init') return ['info', 'Coding agent started', 'A new agent session is ready.'];
+  if (event.type === 'system' && event.subtype === 'init') return ['info', 'RUNNER JACKED IN', 'Encrypted agent channel established.'];
   if (event.type === 'assistant') {
     const blocks = event.message?.content || [];
     for (const block of blocks) {
-      if (block.type === 'text' && block.text) return ['agent', 'Agent update', block.text];
-      if (block.type === 'tool_use') return ['command', 'Running command', block.name === 'Bash' ? (block.input?.command || 'Command') : `${block.name} ${JSON.stringify(block.input || {})}`];
+      if (block.type === 'text' && block.text) return ['agent', 'RUNNER TRANSMISSION', block.text];
+      if (block.type === 'tool_use') return ['command', 'EXECUTING QUICKHACK', block.name === 'Bash' ? (block.input?.command || 'Command') : `${block.name} ${JSON.stringify(block.input || {})}`];
     }
     return false;
   }
   if (event.type === 'user') {
     const blocks = event.message?.content || [];
     for (const block of blocks) {
-      if (block.type === 'tool_result') return [block.is_error ? 'error' : 'success', block.is_error ? 'Command failed' : 'Command completed', typeof block.content === 'string' ? block.content : JSON.stringify(block.content || '')];
+      if (block.type === 'tool_result') return [block.is_error ? 'error' : 'success', block.is_error ? 'QUICKHACK REJECTED' : 'QUICKHACK CLEARED', typeof block.content === 'string' ? block.content : JSON.stringify(block.content || '')];
     }
     return false;
   }
   if (event.type === 'result') {
-    if (event.is_error) return ['error', 'Coding agent error', event.result || 'The agent reported an error.'];
-    return ['success', 'Coding agent finished', event.usage ? `Tokens used: ${event.usage.output_tokens || 0} output` : ''];
+    if (event.is_error) return ['error', 'RUNNER SIGNAL LOST', event.result || 'The runner reported a neural fault.'];
+    return ['success', 'RUNNER CYCLE COMPLETE', event.usage ? `Neural load: ${event.usage.output_tokens || 0} output tokens` : ''];
   }
   return false;
 }
@@ -279,18 +299,18 @@ function renderActivity(logText) {
     if (event) { feed.appendChild(activityItem(...event)); continue; }
     const stage = line.match(/^==\s*(.*?)\s*==$/);
     if (stage) { feed.appendChild(activityItem('stage', stage[1])); continue; }
-    if (line.startsWith('$ ')) { feed.appendChild(activityItem('command', 'Running command', line.slice(2))); continue; }
-    if (line.startsWith('ERROR:')) { feed.appendChild(activityItem('error', 'Mission blocked', line.slice(6).trim())); continue; }
-    if (line.startsWith('Agent summary:')) { feed.appendChild(activityItem('agent', 'Agent summary', line.slice(14).trim())); continue; }
-    if (line.startsWith('Root cause:')) { feed.appendChild(activityItem('info', 'Root cause identified', line.slice(11).trim())); continue; }
-    if (line.startsWith('Unresolved risks:')) { feed.appendChild(activityItem('warning', 'Unresolved risks')); continue; }
-    if (line.startsWith('- ')) { feed.appendChild(activityItem('warning', 'Risk', line.slice(2))); continue; }
+    if (line.startsWith('$ ')) { feed.appendChild(activityItem('command', 'EXECUTING QUICKHACK', line.slice(2))); continue; }
+    if (line.startsWith('ERROR:')) { feed.appendChild(activityItem('error', 'BREACH BLOCKED', line.slice(6).trim())); continue; }
+    if (line.startsWith('Agent summary:')) { feed.appendChild(activityItem('agent', 'RUNNER DEBRIEF', line.slice(14).trim())); continue; }
+    if (line.startsWith('Root cause:')) { feed.appendChild(activityItem('info', 'INTRUSION VECTOR FOUND', line.slice(11).trim())); continue; }
+    if (line.startsWith('Unresolved risks:')) { feed.appendChild(activityItem('warning', 'ACTIVE THREATS')); continue; }
+    if (line.startsWith('- ')) { feed.appendChild(activityItem('warning', 'THREAT', line.slice(2))); continue; }
     if (/^(Completed:|Safe to submit as PR: yes)/.test(line)) { feed.appendChild(activityItem('success', line)); continue; }
     if (/^(Safe to submit as PR: no|Approval required:)/.test(line)) { feed.appendChild(activityItem('warning', line)); continue; }
     feed.appendChild(activityItem('output', line));
   }
-  if (!lines.length) feed.appendChild(activityItem('running', 'Waiting to start', 'Activity will appear here shortly.'));
-  if (hiddenJson) feed.appendChild(activityItem('info', 'Additional technical events hidden', `${hiddenJson} low-level events are available in the raw log.`));
+  if (!lines.length) feed.appendChild(activityItem('running', 'AWAITING JACK-IN', 'Encrypted telemetry will stream here.'));
+  if (hiddenJson) feed.appendChild(activityItem('info', 'SIGNALS SUPPRESSED', `${hiddenJson} low-level events remain in the raw signal.`));
   if (wasAtBottom) feed.scrollTop = feed.scrollHeight;
 }
 
@@ -299,12 +319,12 @@ document.getElementById('log-view-toggle').addEventListener('click', event => {
   const feed = document.getElementById('activity-log');
   raw.hidden = !raw.hidden;
   feed.hidden = !feed.hidden;
-  event.currentTarget.textContent = raw.hidden ? 'Show raw log' : 'Show friendly view';
+  event.currentTarget.textContent = raw.hidden ? 'Open raw signal' : 'Decode telemetry';
 });
 
 function applyJob(job) {
   currentJob = job;
-  document.getElementById('stage').textContent = job.stage;
+  document.getElementById('stage').textContent = stageLabel(job.stage || '');
   const status = document.getElementById('status');
   status.textContent = job.status.replace(/_/g, ' ');
   status.className = `state state-lg state-${job.status}`;
@@ -320,6 +340,7 @@ function applyJob(job) {
   document.getElementById('approval-message').textContent = job.approval_message || '';
   document.getElementById('stop-button').hidden = !['queued', 'running', 'waiting_approval'].includes(job.status);
   document.getElementById('close-button').hidden = ['queued', 'running', 'waiting_approval', 'closed'].includes(job.status);
+  document.getElementById('continue-pr-button').hidden = !(job.status === 'completed' && job.result && job.result.pr_skipped);
   const logs = document.getElementById('logs');
   const atBottom = logs.scrollTop + logs.clientHeight >= logs.scrollHeight - 40;
   rawLog = job.logs || '';
@@ -377,13 +398,29 @@ async function approve(action) {
   }
 }
 async function stopJob() {
-  if (!confirm('Stop this run? It will not advance to another gate.')) return;
+  if (!confirm('Sever this operation? The runner will not advance beyond the current ICE gate.')) return;
   try {
     const response = await fetch(`/api/jobs/${jobId}/stop`, {method: 'POST'});
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || `Stop failed (${response.status})`);
     applyJob(body);
   } catch (error) { showError(`Could not stop job: ${error.message}`); }
+}
+async function continuePr() {
+  const button = document.getElementById('continue-pr-button');
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/jobs/${jobId}/continue-pr`, {method: 'POST'});
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || `Continue failed (${response.status})`);
+    applyJob(body);
+    active = true;
+    setTimeout(refresh, 1000);
+  } catch (error) {
+    showError(`Could not continue to PR: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
 }
 async function closeJob() {
   try {
@@ -413,8 +450,10 @@ async function refresh() {
 }
 renderActivity(rawLog);
 renderGates();
+document.getElementById('stage').textContent = stageLabel(currentJob.stage || '');
 document.getElementById('stop-button').hidden = !['queued', 'running', 'waiting_approval'].includes(currentJob.status);
 document.getElementById('close-button').hidden = ['queued', 'running', 'waiting_approval', 'closed'].includes(currentJob.status);
+document.getElementById('continue-pr-button').hidden = !(currentJob.status === 'completed' && currentJob.result && currentJob.result.pr_skipped);
 if (currentJob.status === 'completed') renderVictoryStats({{ (job.result or {})|tojson }});
 setTimeout(refresh, 1000);
 </script>

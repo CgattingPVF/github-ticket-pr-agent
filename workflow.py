@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import shlex
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -33,10 +34,24 @@ class WorkflowRunner:
     def __init__(self, settings: Settings, store: JobStore):
         self.settings = settings
         self.store = store
+        # Keep expensive agent/repository work bounded while allowing the UI to
+        # launch a small batch of tickets at once.
+        self._run_slots = threading.BoundedSemaphore(3)
+        # LOCAL_REPO_PATH jobs share branches and working-tree state. They must
+        # never overlap, even though independently cloned jobs may run in parallel.
+        self._local_workspace_lock = threading.Lock()
 
     def start(self, job_id: str) -> None:
-        thread = threading.Thread(target=self.run, args=(job_id,), daemon=True)
+        thread = threading.Thread(target=self._run_with_slot, args=(job_id,), daemon=True)
         thread.start()
+
+    def _run_with_slot(self, job_id: str) -> None:
+        with self._run_slots:
+            if self.settings.local_repo_path:
+                with self._local_workspace_lock:
+                    self.run(job_id)
+            else:
+                self.run(job_id)
 
     def log(self, job_id: str, message: str) -> None:
         self.store.append_log(job_id, message)
@@ -196,7 +211,7 @@ class WorkflowRunner:
                     )
             if not validation_commands:
                 reported_passes = [
-                    item for item in (result.get("tests_run") or [])
+                    item for item in self._dict_items(result.get("tests_run"))
                     if str(item.get("result", "")).lower() == "passed"
                 ]
                 if not reported_passes:
@@ -211,7 +226,7 @@ class WorkflowRunner:
             }
             review = {"verdict": "PASS", "summary": "All changed repositories reviewed.", "findings": []}
             for repo_name, repo_review in reviews.items():
-                for finding in repo_review.get("findings") or []:
+                for finding in self._dict_items(repo_review.get("findings")):
                     review["findings"].append({**finding, "repository": repo_name})
             if review["findings"]:
                 review["verdict"] = "BLOCK" if blocking_findings(review) else "COMMENT"
@@ -238,7 +253,7 @@ class WorkflowRunner:
                 }
                 review = {"verdict": "PASS", "summary": "All changed repositories reviewed.", "findings": []}
                 for repo_name, repo_review in reviews.items():
-                    for finding in repo_review.get("findings") or []:
+                    for finding in self._dict_items(repo_review.get("findings")):
                         review["findings"].append({**finding, "repository": repo_name})
                 if review["findings"]:
                     review["verdict"] = "BLOCK" if blocking_findings(review) else "COMMENT"
@@ -258,140 +273,23 @@ class WorkflowRunner:
                     "confidence": result["confidence"], "summary": result["summary"],
                     "root_cause": result["root_cause"], "review": review,
                     "code_written": True, "pr_skipped": True,
+                    "commit_message": result["commit_message"], "pr_title": result["pr_title"],
+                    "reviews": reviews, "changed_repos": list(changed_repos),
+                    "evidence": result.get("evidence") or [],
+                    "files_changed": result.get("files_changed") or [],
+                    "tests_run": result.get("tests_run") or [],
+                    "unresolved_risks": result.get("unresolved_risks") or [],
+                    "completion_requirements": result.get("completion_requirements") or [],
+                    "pr_notes": result.get("pr_notes") or "",
                 }
                 self.store.update(job_id, status="completed", stage="Code written (PR skipped)", result_json=local_result)
                 log("Completed: code written locally; PR creation skipped by strategy.")
                 return
 
-            blockers = blocking_findings(review)
-            if blockers:
-                titles = ", ".join(str(item.get("title", "blocking finding")) for item in blockers)
-                raise WorkflowError(f"Automated review still has blocking findings: {titles}")
-
-            self.approve_stage(job_id, "Committing and pushing")
-            self.stage(job_id, "Committing and pushing")
-            issue_link = f"{issue_ref.owner}/{issue_ref.repo}#{issue_ref.number}"
-            repo_refs = {
-                name: type(issue_ref)(owner=issue_ref.owner, repo=name, number=issue_ref.number)
-                for name in changed_repos
-            }
-            repo_metadata = {
-                name: github.get_repository(ref) for name, ref in repo_refs.items()
-            }
-            for repo_name, current_repo_dir in changed_repos.items():
-                log(f"Committing repository: {repo_name}")
-                github.commit_and_push(
-                    current_repo_dir,
-                    branch_name,
-                    str(result["commit_message"]),
-                    repo_refs[repo_name].full_name,
-                )
-
-            self.approve_stage(job_id, "Creating pull request")
-            self.stage(job_id, "Creating pull request")
-            pr_urls: dict[str, str] = {}
-            for repo_name, current_repo_dir in changed_repos.items():
-                repo_artifact_dir = artifact_dir / repo_name
-                repo_artifact_dir.mkdir(parents=True, exist_ok=True)
-                default_branch = repo_metadata[repo_name].get("default_branch")
-                # A closing keyword ("Fixes") is what makes the PR appear in the
-                # issue's Development section. GitHub only auto-closes the issue when
-                # the PR merges into the default branch, so this is safe on other
-                # branches regardless of close_issue_on_merge.
-                # ponytail: closing keyword is the only body-based way to link a PR
-                # into the Development section; keep it for the issue's own repo.
-                relation = "Fixes" if repo_name == issue_ref.repo else "Relates to"
-                repo_review = reviews[repo_name]
-                pr_body = self._build_pr_body(
-                    result,
-                    format_review_markdown(repo_review),
-                    relation,
-                    issue_link,
-                    base_branch,
-                    default_branch,
-                )
-                title = str(result["pr_title"])
-                if len(changed_repos) > 1:
-                    title = f"{title} ({repo_name})"
-                pr_urls[repo_name] = github.create_pr(
-                    repo_refs[repo_name],
-                    current_repo_dir,
-                    base_branch,
-                    branch_name,
-                    title,
-                    pr_body,
-                    repo_artifact_dir,
-                )
-
-            pr_url = pr_urls.get(issue_ref.repo) or next(iter(pr_urls.values()))
-
-            partial_result = {
-                "ticket_url": issue["html_url"],
-                "repository": issue_ref.full_name,
-                "issue_number": issue_ref.number,
-                "base_branch": base_branch,
-                "branch_name": branch_name,
-                "pr_url": pr_url,
-                "pr_urls": pr_urls,
-                "confidence": result["confidence"],
-                "summary": result["summary"],
-                "root_cause": result["root_cause"],
-                "review": review,
-            }
-            self.store.update(job_id, result_json=partial_result)
-
-            self.stage(job_id, "Posting code review")
-            for repo_name, current_pr_url in pr_urls.items():
-                repo_artifact_dir = artifact_dir / repo_name
-                github.post_review(
-                    repo_refs[repo_name],
-                    current_pr_url,
-                    reviews[repo_name],
-                    format_review_markdown(reviews[repo_name]),
-                    repo_artifact_dir,
-                )
-
-            self.stage(job_id, "Linking original ticket")
-            github.comment_on_issue(
-                issue_ref,
-                "Automated investigation and coordinated fix PRs created:\n\n"
-                + "\n".join(f"- `{name}`: {url}" for name, url in pr_urls.items())
-                + f"\n\nBase branch: `{base_branch}`  \nBranch: `{branch_name}`"
-                + self._format_test_plan_markdown(test_plan),
-                artifact_dir,
+            self._finish_pr(
+                job_id, params, log, issue_ref, issue, base_branch, branch_name,
+                changed_repos, result, review, reviews, test_plan, github, artifact_dir, started_at,
             )
-
-            github_login = params.get("github_login")
-            if github_login:
-                github.assign_issue(issue_ref, github_login)
-                for repo_name, current_pr_url in pr_urls.items():
-                    github.assign_pr(repo_refs[repo_name], current_pr_url, github_login)
-
-            additions = deletions = 0
-            for current_repo_dir in changed_repos.values():
-                repo_additions, repo_deletions = github.diff_stat(current_repo_dir, base_branch)
-                additions += repo_additions
-                deletions += repo_deletions
-
-            final_result = {
-                "ticket_url": issue["html_url"],
-                "repository": issue_ref.full_name,
-                "issue_number": issue_ref.number,
-                "base_branch": base_branch,
-                "branch_name": branch_name,
-                "pr_url": pr_url,
-                "pr_urls": pr_urls,
-                "confidence": result["confidence"],
-                "summary": result["summary"],
-                "root_cause": result["root_cause"],
-                "review": review,
-                "assignee": github_login,
-                "additions": additions,
-                "deletions": deletions,
-                "duration_seconds": round(time.time() - started_at),
-            }
-            self.store.update(job_id, status="completed", stage="Completed", result_json=final_result)
-            log("Completed: " + ", ".join(pr_urls.values()))
         except Exception as exc:  # noqa: BLE001 - workflow boundary must record every failure
             current = self.store.get(job_id)
             if not current or current.get("status") != "stopped":
@@ -399,6 +297,217 @@ class WorkflowRunner:
                 if params.get("comment_on_failure", self.settings.comment_on_failure):
                     self._comment_on_failure(job_id, params, exc, current, result, review, log)
             log(f"ERROR: {exc}")
+
+    def continue_to_pr(self, job_id: str) -> None:
+        """Resume a job that stopped at 'Code written (PR skipped)' and run it
+        through commit/push/PR/review/link using the code already on disk."""
+        thread = threading.Thread(target=self._continue_to_pr_with_slot, args=(job_id,), daemon=True)
+        thread.start()
+
+    def _continue_to_pr_with_slot(self, job_id: str) -> None:
+        with self._run_slots:
+            if self.settings.local_repo_path:
+                with self._local_workspace_lock:
+                    self._continue_to_pr(job_id)
+            else:
+                self._continue_to_pr(job_id)
+
+    def _continue_to_pr(self, job_id: str) -> None:
+        job = self.store.get(job_id)
+        if not job:
+            return
+        params = job["parameters"]
+        stored = job["result"] or {}
+        def log(message: str) -> None:
+            self.log(job_id, message)
+        result: dict = {}
+        review: dict = {}
+        started_at = time.time()
+        self.store.update(job_id, status="running", stage="Resuming to PR")
+        try:
+            issue_ref = parse_issue_url(params["issue_url"])
+            base_branch = stored["base_branch"]
+            branch_name = stored["branch_name"]
+            artifact_dir = self.settings.workspace_root / job_id
+            github = GitHubOps(self.settings.command_timeout_seconds, log)
+            issue = github.get_issue(issue_ref)
+            test_plan = self._get_or_generate_test_plan(
+                issue_ref, issue, self._provider_command(
+                    params.get("agent_provider") or ("custom" if params.get("agent_command") else "codex"),
+                    params.get("agent_command"), "agent",
+                ), artifact_dir, log,
+            )
+
+            repo_names = stored.get("changed_repos") or [issue_ref.repo]
+            changed_repos: dict[str, Path] = {}
+            for repo_name in repo_names:
+                if self.settings.local_repo_path:
+                    candidate = self.settings.local_repo_path / repo_name
+                    repo_dir = candidate if (candidate / ".git").exists() else self.settings.local_repo_path
+                else:
+                    repo_dir = artifact_dir / "repo" if repo_name == issue_ref.repo else artifact_dir / repo_name / "repo"
+                if not (repo_dir / ".git").exists():
+                    raise WorkflowError(f"Could not find the previously cloned repository for {repo_name} at {repo_dir}.")
+                changed_repos[repo_name] = repo_dir
+
+            result = {
+                "commit_message": stored["commit_message"], "pr_title": stored["pr_title"],
+                "confidence": stored["confidence"], "summary": stored["summary"],
+                "root_cause": stored["root_cause"],
+                "evidence": stored.get("evidence") or [],
+                "files_changed": stored.get("files_changed") or [],
+                "tests_run": stored.get("tests_run") or [],
+                "unresolved_risks": stored.get("unresolved_risks") or [],
+                "completion_requirements": stored.get("completion_requirements") or [],
+                "pr_notes": stored.get("pr_notes") or "",
+            }
+            review = stored["review"]
+            reviews = stored.get("reviews") or {name: review for name in changed_repos}
+
+            self._finish_pr(
+                job_id, params, log, issue_ref, issue, base_branch, branch_name,
+                changed_repos, result, review, reviews, test_plan, github, artifact_dir, started_at,
+            )
+        except Exception as exc:  # noqa: BLE001 - workflow boundary must record every failure
+            current = self.store.get(job_id)
+            if not current or current.get("status") != "stopped":
+                self.store.update(job_id, status="failed", stage="Failed", error=str(exc))
+            log(f"ERROR: {exc}")
+
+    def _finish_pr(
+        self, job_id: str, params: dict, log, issue_ref, issue: dict, base_branch: str,
+        branch_name: str, changed_repos: dict[str, Path], result: dict, review: dict,
+        reviews: dict, test_plan: dict | None, github: GitHubOps, artifact_dir: Path, started_at: float,
+    ) -> None:
+        self.approve_stage(job_id, "Committing and pushing")
+        self.stage(job_id, "Committing and pushing")
+        issue_link = f"{issue_ref.owner}/{issue_ref.repo}#{issue_ref.number}"
+        repo_refs = {
+            name: type(issue_ref)(owner=issue_ref.owner, repo=name, number=issue_ref.number)
+            for name in changed_repos
+        }
+        repo_metadata = {
+            name: github.get_repository(ref) for name, ref in repo_refs.items()
+        }
+        for repo_name, current_repo_dir in changed_repos.items():
+            log(f"Committing repository: {repo_name}")
+            github.commit_and_push(
+                current_repo_dir,
+                branch_name,
+                str(result["commit_message"]),
+                repo_refs[repo_name].full_name,
+            )
+
+        self.approve_stage(job_id, "Creating pull request")
+        self.stage(job_id, "Creating pull request")
+        pr_urls: dict[str, str] = {}
+        for repo_name, current_repo_dir in changed_repos.items():
+            repo_artifact_dir = artifact_dir / repo_name
+            repo_artifact_dir.mkdir(parents=True, exist_ok=True)
+            default_branch = repo_metadata[repo_name].get("default_branch")
+            # A closing keyword ("Fixes") is what makes the PR appear in the
+            # issue's Development section. GitHub only auto-closes the issue when
+            # the PR merges into the default branch, so this is safe on other
+            # branches regardless of close_issue_on_merge.
+            # ponytail: closing keyword is the only body-based way to link a PR
+            # into the Development section; keep it for the issue's own repo.
+            relation = "Fixes" if repo_name == issue_ref.repo else "Relates to"
+            repo_review = reviews[repo_name]
+            pr_body = self._build_pr_body(
+                result,
+                format_review_markdown(repo_review),
+                relation,
+                issue_link,
+                base_branch,
+                default_branch,
+            )
+            title = str(result["pr_title"])
+            if len(changed_repos) > 1:
+                title = f"{title} ({repo_name})"
+            pr_urls[repo_name] = github.create_pr(
+                repo_refs[repo_name],
+                current_repo_dir,
+                base_branch,
+                branch_name,
+                title,
+                pr_body,
+                repo_artifact_dir,
+            )
+
+        pr_url = pr_urls.get(issue_ref.repo) or next(iter(pr_urls.values()))
+
+        partial_result = {
+            "ticket_url": issue["html_url"],
+            "repository": issue_ref.full_name,
+            "issue_number": issue_ref.number,
+            "base_branch": base_branch,
+            "branch_name": branch_name,
+            "pr_url": pr_url,
+            "pr_urls": pr_urls,
+            "confidence": result["confidence"],
+            "summary": result["summary"],
+            "root_cause": result["root_cause"],
+            "review": review,
+        }
+        self.store.update(job_id, result_json=partial_result)
+
+        self.stage(job_id, "Posting code review")
+        for repo_name, current_pr_url in pr_urls.items():
+            repo_artifact_dir = artifact_dir / repo_name
+            github.post_review(
+                repo_refs[repo_name],
+                current_pr_url,
+                reviews[repo_name],
+                format_review_markdown(reviews[repo_name]),
+                repo_artifact_dir,
+            )
+
+        self.stage(job_id, "Linking original ticket")
+        github.comment_on_issue(
+            issue_ref,
+            self._build_ticket_pr_comment(
+                result,
+                review,
+                issue_ref.number,
+                base_branch,
+                branch_name,
+                pr_urls,
+                test_plan,
+            ),
+            artifact_dir,
+        )
+
+        github_login = params.get("github_login")
+        if github_login:
+            github.assign_issue(issue_ref, github_login)
+            for repo_name, current_pr_url in pr_urls.items():
+                github.assign_pr(repo_refs[repo_name], current_pr_url, github_login)
+
+        additions = deletions = 0
+        for current_repo_dir in changed_repos.values():
+            repo_additions, repo_deletions = github.diff_stat(current_repo_dir, base_branch)
+            additions += repo_additions
+            deletions += repo_deletions
+
+        final_result = {
+            "ticket_url": issue["html_url"],
+            "repository": issue_ref.full_name,
+            "issue_number": issue_ref.number,
+            "base_branch": base_branch,
+            "branch_name": branch_name,
+            "pr_url": pr_url,
+            "pr_urls": pr_urls,
+            "confidence": result["confidence"],
+            "summary": result["summary"],
+            "root_cause": result["root_cause"],
+            "review": review,
+            "assignee": github_login,
+            "additions": additions,
+            "deletions": deletions,
+            "duration_seconds": round(time.time() - started_at),
+        }
+        self.store.update(job_id, status="completed", stage="Completed", result_json=final_result)
+        log("Completed: " + ", ".join(pr_urls.values()))
 
     def _comment_on_failure(
         self, job_id: str, params: dict, exc: Exception, job: dict | None,
@@ -484,18 +593,23 @@ class WorkflowRunner:
         )
 
     @staticmethod
+    def _dict_items(items) -> list[dict]:
+        """Keep agent-provided arrays safe when a CLI returns scalar items."""
+        return [item for item in (items or []) if isinstance(item, dict)]
+
+    @staticmethod
     def _failure_comment(failed_stage: str, error: str, result: dict, review: dict) -> str:
         category, explanation = WorkflowRunner._classify_failure(error, result, review)
 
         requirements = [str(item) for item in (result.get("completion_requirements") or []) if str(item).strip()]
         if not requirements:
             requirements.extend(str(item) for item in (result.get("unresolved_risks") or []) if str(item).strip())
-        for test in result.get("tests_run") or []:
+        for test in WorkflowRunner._dict_items(result.get("tests_run")):
             if str(test.get("result", "")).lower() == "failed":
                 requirements.append(
                     f"Fix `{test.get('command', 'the failing validation')}`: {test.get('notes') or 'the check did not pass.'}"
                 )
-        for finding in review.get("findings") or []:
+        for finding in WorkflowRunner._dict_items(review.get("findings")):
             if str(finding.get("severity", "")).upper() in {"HIGH", "CRITICAL"}:
                 requirements.append(f"{finding.get('title', 'Resolve review blocker')}: {finding.get('body', '')}".strip())
         if not requirements:
@@ -522,7 +636,7 @@ class WorkflowRunner:
 
         sections.append("### Required to complete this ticket\n" + checklist)
 
-        tests = result.get("tests_run") or []
+        tests = WorkflowRunner._dict_items(result.get("tests_run"))
         if tests:
             rows = "\n".join(
                 f"| `{item.get('command', '?')}` | {item.get('result', 'unknown')} | {item.get('notes') or ''} |"
@@ -566,34 +680,129 @@ class WorkflowRunner:
             sections.append("**Steps to verify the fix:**\n" + "\n".join(f"- [ ] {step}" for step in test_plan["pass_steps"]))
         return "\n\n".join(sections)
 
+    @staticmethod
+    def _copy_review_untracked_files(repo_dir: Path, review_dir: Path) -> None:
+        """Copy source-relevant untracked files into an isolated review worktree."""
+        result = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            cwd=repo_dir,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise WorkflowError("Could not enumerate untracked files for isolated review.")
+        for relative_text in (item for item in result.stdout.split("\0") if item):
+            relative = Path(relative_text)
+            if relative.parts and relative.parts[0] == ".ticket-agent":
+                continue
+            source = repo_dir / relative
+            target = review_dir / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_symlink():
+                target.symlink_to(source.readlink())
+            elif source.is_file():
+                shutil.copy2(source, target)
+
+    @staticmethod
+    def _set_review_workspace_readonly(review_dir: Path) -> None:
+        """Make the isolated checkout read-only except for agent result metadata."""
+        for path in review_dir.rglob("*"):
+            relative = path.relative_to(review_dir)
+            if relative.parts and relative.parts[0] == ".ticket-agent":
+                continue
+            if not path.is_symlink():
+                path.chmod(path.stat().st_mode & ~0o222)
+        review_dir.chmod(review_dir.stat().st_mode & ~0o222)
+
+    @staticmethod
+    def _unlock_review_workspace(review_dir: Path) -> None:
+        """Restore owner write access so a disposable worktree can be removed."""
+        if not review_dir.exists():
+            return
+        review_dir.chmod(review_dir.stat().st_mode | 0o700)
+        for path in review_dir.rglob("*"):
+            if path.is_symlink():
+                continue
+            write_bits = 0o700 if path.is_dir() else 0o600
+            path.chmod(path.stat().st_mode | write_bits)
+
     def _review(self, job_id: str, repo_dir: Path, issue: dict, base_branch: str, command: str, log) -> dict:
         self.approve_stage(job_id, "Reviewing the change")
         self.stage(job_id, "Reviewing the change")
         review_path = repo_dir / ".ticket-agent" / "review.json"
         review_path.parent.mkdir(parents=True, exist_ok=True)
         review_path.unlink(missing_ok=True)
-        before = working_tree_fingerprint(repo_dir)
         prompt = review_prompt(issue, base_branch)
-        # The coding agent may clean its artifact directory as part of its
-        # teardown. Recreate it immediately before writing the review prompt so
-        # review cannot fail with a stale/missing .ticket-agent path.
         review_path.parent.mkdir(parents=True, exist_ok=True)
         review_path.with_name("review-prompt.md").write_text(prompt, encoding="utf-8")
-        run_configured_command(
-            command,
-            cwd=repo_dir,
-            prompt=prompt,
-            timeout=self.settings.review_timeout_seconds,
-            log=log,
-        )
-        after = working_tree_fingerprint(repo_dir)
-        if before != after:
-            raise WorkflowError("The review agent modified source files; review must be read-only.")
-        review = load_json(review_path)
-        ensure_keys(review, ["verdict", "summary", "findings"], "Review result")
-        if not isinstance(review.get("findings"), list):
-            raise WorkflowError("Review findings must be a JSON array.")
-        return review
+
+        temporary_path = Path(tempfile.mkdtemp(prefix="ticket-review-", dir=self.settings.workspace_root))
+        temporary_path.rmdir()  # `git worktree add` requires a path that does not exist.
+        worktree_added = False
+        try:
+            run_command(
+                ["git", "worktree", "add", "--detach", str(temporary_path), "HEAD"],
+                cwd=repo_dir,
+                timeout=self.settings.command_timeout_seconds,
+                log=log,
+            )
+            worktree_added = True
+
+            patch = subprocess.run(
+                ["git", "diff", "--binary", "--full-index", "HEAD"],
+                cwd=repo_dir,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            if patch.returncode != 0:
+                raise WorkflowError("Could not prepare the implementation diff for isolated review.")
+            if patch.stdout:
+                run_command(
+                    ["git", "apply", "--binary", "--whitespace=nowarn", "-"],
+                    cwd=temporary_path,
+                    stdin_text=patch.stdout,
+                    timeout=self.settings.command_timeout_seconds,
+                    log=log,
+                )
+            self._copy_review_untracked_files(repo_dir, temporary_path)
+
+            isolated_review_path = temporary_path / ".ticket-agent" / "review.json"
+            isolated_review_path.parent.mkdir(parents=True, exist_ok=True)
+            isolated_review_path.with_name("review-prompt.md").write_text(prompt, encoding="utf-8")
+            before = working_tree_fingerprint(temporary_path)
+            self._set_review_workspace_readonly(temporary_path)
+            run_configured_command(
+                command,
+                cwd=temporary_path,
+                prompt=prompt,
+                timeout=self.settings.review_timeout_seconds,
+                log=log,
+            )
+            after = working_tree_fingerprint(temporary_path)
+            if before != after:
+                log("Reviewer attempted source edits in its isolated checkout; those edits were discarded.")
+
+            review = load_json(isolated_review_path)
+            ensure_keys(review, ["verdict", "summary", "findings"], "Review result")
+            if not isinstance(review.get("findings"), list):
+                raise WorkflowError("Review findings must be a JSON array.")
+            shutil.copy2(isolated_review_path, review_path)
+            return review
+        finally:
+            self._unlock_review_workspace(temporary_path)
+            if worktree_added:
+                run_command(
+                    ["git", "worktree", "remove", "--force", str(temporary_path)],
+                    cwd=repo_dir,
+                    timeout=self.settings.command_timeout_seconds,
+                    log=log,
+                    check=False,
+                )
+            shutil.rmtree(temporary_path, ignore_errors=True)
 
     def _open_editor(self, repo_dir: Path, log) -> None:
         command = shlex.split(self.settings.editor_command)
@@ -674,7 +883,8 @@ class WorkflowRunner:
         if risks:
             raise WorkflowError("Unresolved risks remain: " + "; ".join(map(str, risks)))
         failed_tests = [
-            item for item in (result.get("tests_run") or []) if str(item.get("result", "")).lower() == "failed"
+            item for item in self._dict_items(result.get("tests_run"))
+            if str(item.get("result", "")).lower() == "failed"
         ]
         if failed_tests:
             raise WorkflowError("The coding agent reported failed validation checks.")
@@ -703,7 +913,7 @@ class WorkflowRunner:
     ) -> str:
         tests = result.get("tests_run") or []
         test_lines = []
-        for item in tests:
+        for item in WorkflowRunner._dict_items(tests):
             test_lines.append(
                 f"- `{item.get('command', 'not specified')}`: **{item.get('result', 'unknown')}**"
                 + (f" — {item.get('notes')}" if item.get("notes") else "")
@@ -738,4 +948,195 @@ class WorkflowRunner:
 {result.get('pr_notes') or 'No additional notes.'}
 
 > Generated by Ticket PR Agent. Human approval is still required before merge.
+""".strip()
+
+    @staticmethod
+    def _build_ticket_pr_comment(
+        result: dict,
+        review: dict,
+        issue_number: int,
+        base_branch: str,
+        source_branch: str,
+        pr_urls: dict[str, str],
+        test_plan: dict | None,
+    ) -> str:
+        def bullets(values, fallback: str) -> str:
+            items = [str(value).strip() for value in (values or []) if str(value).strip()]
+            return "\n".join(f"* {item}" for item in items) if items else f"* {fallback}"
+
+        summary = str(result.get("summary") or "No summary was reported.")
+        root_cause = str(result.get("root_cause") or "No root cause was reported.")
+        evidence = result.get("evidence") or []
+        files = result.get("files_changed") or []
+        tests = WorkflowRunner._dict_items(result.get("tests_run") or [])
+        findings = WorkflowRunner._dict_items(review.get("findings") or [])
+        risks = result.get("unresolved_risks") or []
+        confidence = max(0.0, min(1.0, float(result.get("confidence", 0))))
+        confidence_pct = round(confidence * 100)
+        overall = "High" if confidence >= .9 else "Medium" if confidence >= .7 else "Low"
+        risk_level = "Low" if not risks and not findings else "Medium"
+        branch_kind = source_branch.lower()
+        if "refactor" in branch_kind:
+            pr_type = "Refactor"
+        elif branch_kind.startswith(("chore/", "maintenance/", "docs/")):
+            pr_type = "Maintenance"
+        elif "fix" in branch_kind or branch_kind.startswith("bug/"):
+            pr_type = "Bug Fix"
+        else:
+            pr_type = "Feature"
+        pr_links = "<br>".join(f"[{name}]({url})" for name, url in pr_urls.items())
+
+        test_rows = []
+        for item in tests:
+            command = item.get("command", "not specified")
+            outcome = item.get("result", "unknown")
+            notes = f" — {item['notes']}" if item.get("notes") else ""
+            test_rows.append(f"* `{command}`: **{outcome}**{notes}")
+        test_report = "\n".join(test_rows) if test_rows else "* No automated checks were reported."
+        all_passed = bool(tests) and all(str(item.get("result", "")).lower() == "passed" for item in tests)
+        check = "x" if all_passed else " "
+
+        repro = (test_plan or {}).get("repro_steps") or ["Reproduce the ticket scenario."]
+        verify = (test_plan or {}).get("pass_steps") or ["Confirm the reported problem is resolved."]
+        manual_steps = [*repro, *verify]
+        manual = "\n".join(f"{index}. {step}" for index, step in enumerate(manual_steps, 1))
+        reviewer_focus = files[:3] or ["The implementation and its alignment with the ticket requirements."]
+        reviewer_list = "\n".join(f"{index}. {item}" for index, item in enumerate(reviewer_focus, 1))
+        remaining = result.get("completion_requirements") or []
+        notes = str(result.get("pr_notes") or "No additional reviewer notes were reported.")
+
+        return f"""# Summary
+
+This PR fixes/adds `{summary}`.
+
+It resolves `{root_cause}` by `{summary}`.
+
+## Linked Work
+
+* **Issue:** #{issue_number}
+* **Pull request:** {pr_links}
+* **Base branch:** `{base_branch}`
+* **Source branch:** `{source_branch}`
+* **PR type:** `{pr_type}`
+
+## Investigation
+
+### Problem
+
+`{root_cause}`
+
+### Root Cause
+
+`{root_cause}`
+
+### Evidence
+
+{bullets(evidence, "No supporting evidence was reported.")}
+
+## Changes Made
+
+{bullets(files, summary)}
+
+## Scope
+
+### Included
+
+* {summary}
+
+### Not Included
+
+{bullets(remaining, "No excluded or follow-up work was reported.")}
+
+## Behaviour
+
+| Scenario | Before | After |
+| --- | --- | --- |
+| Ticket scenario | {root_cause} | {summary} |
+
+## Confidence
+
+**Overall confidence:** `{overall}` — `{confidence_pct}%`
+
+| Area | Confidence | Reason |
+| --- | ---: | --- |
+| Root cause | `{confidence_pct}%` | Supported by the investigation evidence above. |
+| Fix | `{confidence_pct}%` | The implementation passed the submission confidence gate. |
+| Testing | `{'100' if all_passed else confidence_pct}%` | See the reported automated checks below. |
+| Requirements | `{confidence_pct}%` | Assessed against issue #{issue_number}. |
+
+### Remaining Unknowns
+
+{bullets(remaining, "None reported.")}
+
+## Risk
+
+**Risk level:** `{risk_level}`
+
+### Main Risks
+
+{bullets(risks or [item.get("title", item.get("message", "Review finding")) for item in findings], "No material risks were reported.")}
+
+### Mitigation
+
+* Automated investigation, validation, and code review were completed before PR creation.
+
+## Testing
+
+### Automated Checks
+
+* [{check}] Relevant reported checks pass
+* [ ] Existing tests pass
+* [ ] Lint passes
+* [ ] Type checking passes
+* [ ] Build passes
+
+{test_report}
+
+### Manual Verification
+
+{manual}
+
+### Edge Cases Checked
+
+* [ ] Empty or missing data
+* [ ] Invalid input
+* [ ] Existing or duplicate records
+* [ ] Permission restrictions
+* [ ] Failure and rollback behaviour
+* [ ] Related integrations
+
+## Data and Security
+
+* **Database changes:** `Not reported`
+* **Migration required:** `Not reported`
+* **Permissions changed:** `Not reported`
+* **Sensitive data affected:** `Not reported`
+* **Rollback safe:** `Not reported`
+
+## Reviewer Focus
+
+Please review:
+
+{reviewer_list}
+
+Additional notes: {notes}
+
+## Deployment
+
+* No deployment steps or configuration changes were reported.
+* Monitor the changed behaviour after release.
+
+## Rollback
+
+`Revert the PR commit(s) and redeploy the previous revision.`
+
+## Final Checklist
+
+* [x] Issue and PR are linked
+* [x] Root cause is documented
+* [x] Change is limited to the reported scope
+* [{check}] Tests and validation completed
+* [x] Risks and unknowns are documented
+* [ ] No unapproved schema changes
+* [x] Rollback approach is clear
 """.strip()

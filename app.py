@@ -5,6 +5,7 @@ import os
 import re
 import socket
 import subprocess
+import threading
 from pathlib import Path
 
 from authlib.integrations.flask_client import OAuth
@@ -95,18 +96,16 @@ def fetch_repository_prs(repository: str) -> list[dict]:
     return prs
 
 
-# The garage: each tier is a French car you unlock as you level up. `rate` is the
-# francs-per-hour every car of that tier idles at — the higher the tier, the fatter
-# the passive income. ponytail: flat per-tier rate, add per-car upgrades if it gets stale.
-GARAGE = [
-    {'name': 'Citroën 2CV', 'emoji': '🚗', 'rate': 5},
-    {'name': 'Renault 4', 'emoji': '🚙', 'rate': 12},
-    {'name': 'Peugeot 205 GTI', 'emoji': '🏎️', 'rate': 25},
-    {'name': 'Renault 5 Turbo', 'emoji': '🚘', 'rate': 45},
-    {'name': 'Citroën DS', 'emoji': '🛸', 'rate': 80},
-    {'name': 'Alpine A110', 'emoji': '🏁', 'rate': 140},
-    {'name': 'Bugatti Type 35', 'emoji': '🏆', 'rate': 240},
-    {'name': 'Bugatti Chiron', 'emoji': '👑', 'rate': 400},
+# Street-cred tiers set the operator title and passive contract-network yield.
+STREET_CRED_TIERS = [
+    {'rank': 'Back-Alley Runner', 'code': 'SC-01', 'rate': 5},
+    {'rank': 'Chrome Rookie', 'code': 'SC-02', 'rate': 12},
+    {'rank': 'Ghost Operator', 'code': 'SC-03', 'rate': 25},
+    {'rank': 'Netrunner', 'code': 'SC-04', 'rate': 45},
+    {'rank': 'Blackwall Specialist', 'code': 'SC-05', 'rate': 80},
+    {'rank': 'Afterlife Merc', 'code': 'SC-06', 'rate': 140},
+    {'rank': 'Night Legend', 'code': 'SC-07', 'rate': 240},
+    {'rank': 'City Icon', 'code': 'SC-08', 'rate': 400},
 ]
 XP_PER_LEVEL = 400
 XP_COMPLETED = 120
@@ -114,16 +113,16 @@ XP_INTEL = 20
 
 
 def player_stats(jobs: list[dict]) -> dict:
-    """Derive the garage HUD (level, current car, idle francs, streak, achievements)."""
+    """Derive Neon Ops street cred, credits, streaks, and accolades."""
     completed = [j for j in jobs if j['status'] == 'completed']
     failed = [j for j in jobs if j['status'] == 'failed']
     xp = len(completed) * XP_COMPLETED + len(failed) * XP_INTEL
     level = 1 + xp // XP_PER_LEVEL
-    car = GARAGE[min(level - 1, len(GARAGE) - 1)]
-    next_car = GARAGE[level] if level < len(GARAGE) else None
-    rank = car['name']
+    tier = STREET_CRED_TIERS[min(level - 1, len(STREET_CRED_TIERS) - 1)]
+    next_rank = STREET_CRED_TIERS[level] if level < len(STREET_CRED_TIERS) else None
+    rank = tier['rank']
 
-    # Idle earnings: every merged PR is a car that's been earning francs since it merged.
+    # Every cleared contract becomes an income-producing network asset.
     now = datetime.now(timezone.utc)
     banked = 0.0
     for j in completed:
@@ -137,9 +136,13 @@ def player_stats(jobs: list[dict]) -> dict:
         except ValueError:
             continue
         hours = max(0.0, (now - merged).total_seconds() / 3600)
-        banked += car['rate'] * hours
-    fleet_size = len(completed)
-    franc_rate = fleet_size * car['rate']  # francs per hour, whole fleet
+        banked += tier['rate'] * hours
+    network_assets = len(completed)
+    credits_rate = network_assets * tier['rate']
+    # A quarter of passive yield is automatically reinvested in Blackwall
+    # maintenance: the currency has a visible purpose beyond a counter.
+    maintenance_fund = round(banked * 0.25)
+    maintenance_target = 1000
 
     days = {j['updated_at'][:10] for j in completed if j.get('updated_at')}
     streak, day = 0, datetime.now(timezone.utc).date()
@@ -157,24 +160,26 @@ def player_stats(jobs: list[dict]) -> dict:
         c['created_at'] > f['created_at'] for c in completed for f in failed
     )
     achievements = [
-        {'icon': '🎉', 'name': 'First merge', 'desc': 'Complete your first mission', 'unlocked': len(completed) >= 1},
-        {'icon': '🎩', 'name': 'Hat trick', 'desc': 'Complete 3 missions', 'unlocked': len(completed) >= 3},
-        {'icon': '⚔️', 'name': 'Bug slayer', 'desc': 'Complete 10 missions', 'unlocked': len(completed) >= 10},
-        {'icon': '✨', 'name': 'Flawless victory', 'desc': 'Ship a fix with zero review findings', 'unlocked': any(flawless(j) for j in completed)},
-        {'icon': '🔥', 'name': 'On a roll', 'desc': 'Complete missions 3 days in a row', 'unlocked': streak >= 3},
-        {'icon': '🧠', 'name': 'Field scientist', 'desc': 'Turn 5 failures into documented intel', 'unlocked': len(failed) >= 5},
-        {'icon': '💪', 'name': 'Comeback', 'desc': 'Complete a mission after a failed run', 'unlocked': comeback},
+        {'icon': '01', 'name': 'First Blood', 'desc': 'Clear your first contract', 'unlocked': len(completed) >= 1},
+        {'icon': '03', 'name': 'Triple Breach', 'desc': 'Clear 3 contracts', 'unlocked': len(completed) >= 3},
+        {'icon': '10', 'name': 'Daemon Hunter', 'desc': 'Clear 10 contracts', 'unlocked': len(completed) >= 10},
+        {'icon': '00', 'name': 'Zero Trace', 'desc': 'Deploy with zero review findings', 'unlocked': any(flawless(j) for j in completed)},
+        {'icon': '3D', 'name': 'Overclocked', 'desc': 'Clear contracts 3 days in a row', 'unlocked': streak >= 3},
+        {'icon': '5X', 'name': 'Data Scavenger', 'desc': 'Extract intel from 5 interrupted contracts', 'unlocked': len(failed) >= 5},
+        {'icon': 'RX', 'name': 'Second Heart', 'desc': 'Clear a contract after a failed breach', 'unlocked': comeback},
     ]
     return {
         'xp': xp,
         'level': level,
         'rank': rank,
-        'car': car,
-        'next_car': next_car,
-        'garage': [{**c, 'unlocked': i < level} for i, c in enumerate(GARAGE)],
-        'fleet_size': fleet_size,
-        'franc_rate': franc_rate,
-        'francs_banked': round(banked),
+        'rank_code': tier['code'],
+        'next_rank': next_rank,
+        'network_assets': network_assets,
+        'credits_rate': credits_rate,
+        'credits_banked': round(banked),
+        'maintenance_fund': maintenance_fund,
+        'maintenance_target': maintenance_target,
+        'maintenance_progress_pct': min(100, round(maintenance_fund / maintenance_target * 100)),
         'streak': streak,
         'xp_into_level': xp % XP_PER_LEVEL,
         'xp_per_level': XP_PER_LEVEL,
@@ -278,7 +283,10 @@ def api_user():
 @app.get('/jobs')
 def index():
     jobs = store.list(limit=500)
-    return render_template('index.html', jobs=jobs, tickets=store.list_tickets(limit=500), defaults=settings, player=player_stats(jobs))
+    watch_ids = [item for item in request.args.get('watch', '').split(',') if item]
+    watched_jobs = [store.get(job_id) for job_id in watch_ids]
+    watched_jobs = [job for job in watched_jobs if job]
+    return render_template('index.html', jobs=jobs, tickets=store.list_tickets(), defaults=settings, player=player_stats(jobs), watched_jobs=watched_jobs)
 
 @app.get('/leaderboard')
 def leaderboard_page():
@@ -310,8 +318,14 @@ def settings_page():
 @app.post('/jobs')
 def create_job():
     form = request.form
+    issue_urls = [url.strip() for url in form.getlist('issue_url') if url.strip()]
+    if not issue_urls:
+        issue_urls = [form.get('issue_url', '').strip()]
+    issue_urls = list(dict.fromkeys(issue_urls))
+    if len(issue_urls) > 3:
+        return jsonify({'error': 'Select no more than 3 tickets at a time'}), 400
     parameters = {
-        'issue_url': form.get('issue_url', '').strip(),
+        'issue_url': issue_urls[0] if issue_urls else '',
         'base_branch': form.get('base_branch', 'develop').strip(),
         'branch_prefix': form.get('branch_prefix', 'bug-fix').strip(),
         'agent_command': form.get('agent_command', '').strip(),
@@ -327,10 +341,16 @@ def create_job():
     }
     if not parameters['issue_url']:
         jobs = store.list(limit=500)
-        return render_template('index.html', jobs=jobs, tickets=store.list_tickets(limit=500), defaults=settings, player=player_stats(jobs), form=form, form_error='Issue URL required'), 400
-    job_id = store.create(parameters)
-    runner.start(job_id)
-    return redirect(url_for('job_detail', job_id=job_id))
+        return render_template('index.html', jobs=jobs, tickets=store.list_tickets(), defaults=settings, player=player_stats(jobs), form=form, form_error='Issue URL required'), 400
+    job_ids = []
+    for issue_url in issue_urls:
+        job_parameters = {**parameters, 'issue_url': issue_url}
+        job_id = store.create(job_parameters)
+        runner.start(job_id)
+        job_ids.append(job_id)
+    if len(job_ids) > 1:
+        return redirect(url_for('index', watch=','.join(job_ids)))
+    return redirect(url_for('job_detail', job_id=job_ids[0]))
 
 
 @app.get('/jobs/<job_id>')
@@ -374,6 +394,17 @@ def stop_job(job_id):
     if job['status'] in {'completed', 'failed', 'cancelled', 'stopped', 'closed'}:
         return jsonify({'error': 'Job is already finished'}), 409
     store.stop(job_id)
+    return jsonify(store.get(job_id))
+
+
+@app.post('/api/jobs/<job_id>/continue-pr')
+def continue_to_pr(job_id):
+    job = store.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    if job['status'] != 'completed' or not (job['result'] or {}).get('pr_skipped'):
+        return jsonify({'error': 'Job is not a completed investigate & fix run'}), 409
+    runner.continue_to_pr(job_id)
     return jsonify(store.get(job_id))
 
 
@@ -448,7 +479,10 @@ def sync_tickets():
         synced = sync_github(repository, token=token)
         store.prune_repository_tickets(repository, [ticket['key'] for ticket in synced])
         store.upsert_tickets(synced)
-        return jsonify({'count': len(synced)})
+        eligible = store.list_tickets()
+        if repository:
+            eligible = [ticket for ticket in eligible if ticket.get('repository') == repository]
+        return jsonify({'count': len(eligible), 'synced_count': len(synced)})
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
 
@@ -502,7 +536,26 @@ def generate_all_in_one_prompt():
         return jsonify({"error": str(e)}), 400
 
 
+def _update_codex_in_background() -> None:
+    """Best-effort: keep the Codex CLI current on every app start, without
+    delaying startup or failing it if the update can't run (offline, etc)."""
+    codex_bin = Path(settings.agent_command.split()[0]) if 'codex' in settings.agent_command else None
+    if not codex_bin or not codex_bin.exists():
+        return
+    def run_update() -> None:
+        try:
+            subprocess.run(
+                [str(codex_bin), "update"],
+                env={**os.environ, "NPM_CONFIG_PREFIX": str(codex_bin.parent.parent)},
+                capture_output=True, text=True, timeout=60,
+            )
+        except Exception:
+            pass
+    threading.Thread(target=run_update, daemon=True).start()
+
+
 if __name__ == "__main__":
+    _update_codex_in_background()
     port = find_available_port()
     print(f"Starting on http://127.0.0.1:{port}")
     app.run(host="127.0.0.1", port=port, debug=False)

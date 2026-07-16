@@ -206,13 +206,26 @@ def _format_stream_json_line(line: str) -> str:
         event = json.loads(stripped)
     except json.JSONDecodeError:
         return line.rstrip("\r\n")
+    if not isinstance(event, dict):
+        return ""
     etype = event.get("type")
     if etype == "system":
         model = event.get("model", "")
         return f"▸ session started ({model})" if model else ""  # skip subagent inits
     if etype == "assistant":
         parts: list[str] = []
-        for block in event.get("message", {}).get("content", []):
+        message = event.get("message") or {}
+        if not isinstance(message, dict):
+            return ""
+        for block in message.get("content", []) or []:
+            # Claude has emitted plain string content in some stream-json
+            # versions. Do not let the friendly logger hide the real result.
+            if isinstance(block, str):
+                if block.strip():
+                    parts.append(block.strip())
+                continue
+            if not isinstance(block, dict):
+                continue
             if block.get("type") == "text" and block.get("text", "").strip():
                 parts.append(block["text"].strip())
             elif block.get("type") == "tool_use":
@@ -312,6 +325,8 @@ def format_review_markdown(review: dict) -> str:
     if findings:
         lines.extend(["", "| Severity | Location | Finding |", "|---|---|---|"])
         for item in findings:
+            if not isinstance(item, dict):
+                continue
             path = item.get("path") or "General"
             line = item.get("line")
             location = f"`{path}:{line}`" if line else f"`{path}`"
@@ -330,6 +345,7 @@ def blocking_findings(review: dict) -> list[dict]:
     findings = [
         item
         for item in (review.get("findings") or [])
+        if isinstance(item, dict)
         if str(item.get("severity", "")).upper() in {"CRITICAL", "HIGH", "BLOCKER"}
     ]
     if str(review.get("verdict", "")).upper() == "BLOCK" and not findings:

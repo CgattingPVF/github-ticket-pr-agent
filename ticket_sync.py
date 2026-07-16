@@ -115,9 +115,9 @@ def _project_metadata(repository: str, issue_numbers: list[int], token: str | No
             for number in numbers
         )
         result = _run_gh(['api', 'graphql', '-f', f'query=query {{ repository(owner: "{owner}", name: "{name}") {{ {fields} }} }}'], token=token)
-        if result.returncode:
-            continue
         try:
+            # GraphQL can return useful partial data alongside field-level errors.
+            # Keep the successful aliases instead of dropping the whole batch.
             data = json.loads(result.stdout)['data']['repository']
             for number in numbers:
                 for item in (data.get(f'i{number}') or {}).get('projectItems', {}).get('nodes', []):
@@ -187,6 +187,10 @@ def sync_github(repository: str = '', state: str = 'open', limit: int = 100, tok
         raise RuntimeError(f'GitHub returned invalid JSON: {exc}') from exc
 
     items = payload.get('items', []) if isinstance(payload, dict) else payload
+    # GitHub's REST issues endpoint includes pull requests. Besides not belonging
+    # in the ticket queue, a PR number queried as an Issue poisons its entire
+    # GraphQL metadata batch with a field-level error.
+    items = [item for item in items if isinstance(item, dict) and 'pull_request' not in item]
     project_metadata = _project_metadata(repository, [issue['number'] for issue in items], token) if repository else {}
     now = datetime.now(timezone.utc).isoformat()
     tickets = []

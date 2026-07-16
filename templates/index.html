@@ -1,34 +1,62 @@
 {% extends "base.html" %}
-{% block title %}Mission control · MergeQuest{% endblock %}
+{% block title %}Contracts · Neon Ops{% endblock %}
 {% block content %}
 {% set active = jobs|selectattr('status', 'in', ['queued','running','waiting_approval'])|list|length %}
 
-<section class="hud garage-hud"
-  data-banked="{{ player.francs_banked }}"
-  data-rate="{{ player.franc_rate }}">
+<section class="hud streetcred-hud"
+  data-banked="{{ player.credits_banked }}"
+  data-rate="{{ player.credits_rate }}">
   <div class="hud-player">
-    <div class="garage-car">{{ player.car.emoji }}</div>
+    <div class="rank-sigil" aria-hidden="true"><span>{{ player.rank_code }}</span></div>
     <div class="hud-copy">
-      <div class="hud-rank-row"><strong>{{ player.car.name }}</strong> <span class="muted">Lv {{ player.level }} · fleet of {{ player.fleet_size }}</span></div>
-      <small>{{ player.franc_rate }} ₣/hr idling — every merge parks another car that keeps earning</small>
-      {% if player.next_car %}
-      <div class="xp-bar" title="{{ player.xp_into_level }} / {{ player.xp_per_level }} XP to {{ player.next_car.name }}">
+      <div class="hud-rank-row"><strong>{{ player.rank }}</strong> <span class="muted">STREET CRED // {{ player.level }}</span></div>
+      <small>{{ player.credits_rate }} €$/hr passive network yield · {{ player.network_assets }} cleared contract asset{{ '' if player.network_assets == 1 else 's' }}</small>
+      {% if player.next_rank %}
+      <div class="xp-bar" title="{{ player.xp_into_level }} / {{ player.xp_per_level }} street cred to {{ player.next_rank.rank }}">
         <span style="width: {{ player.progress_pct }}%"></span>
       </div>
-      <small class="muted">Next up: {{ player.next_car.emoji }} {{ player.next_car.name }}</small>
+      <small class="muted">NEXT RANK // {{ player.next_rank.rank }}</small>
       {% else %}
-      <small class="muted">👑 Full garage — you've collected every French classic.</small>
+      <small class="muted">MAX STREET CRED // LEGEND STATUS CONFIRMED</small>
       {% endif %}
     </div>
   </div>
   <div class="hud-stats">
-    <article><strong class="franc-counter">{{ player.francs_banked }}</strong><span>francs banked ₣</span></article>
-    <article><strong>{{ player.completed }}</strong><span>cars in garage</span></article>
-    <article><strong class="{{ 'live' if active }}">{{ active }}</strong><span>in the pits</span></article>
+    <article><strong class="credit-counter">{{ player.credits_banked }}</strong><span>Eurodollars €$</span></article>
+    <article><strong>{{ player.completed }}</strong><span>Targets flatlined</span></article>
+    <article><strong>{{ player.streak }}</strong><span>Day streak</span></article>
+    <article><strong class="{{ 'live' if active }}">{{ active }}</strong><span>Breaches live</span></article>
   </div>
 </section>
 
+<section class="fund-card gh-box">
+  <div class="fund-sigil" aria-hidden="true">₿</div>
+  <div class="fund-copy">
+    <p class="eyebrow">AUTOMATIC REINVESTMENT // BLACKWALL MAINTENANCE</p>
+    <h2>Your EuroDollars keep the network alive.</h2>
+    <p>25% of passive contract yield is routed to perimeter shielding, cold storage, and emergency extraction. No checkout, no paperwork — the city takes its cut before the next breach.</p>
+    <div class="fund-meter"><span style="width: {{ player.maintenance_progress_pct }}%"></span></div>
+    <small>€$ {{ player.maintenance_fund }} / €$ {{ player.maintenance_target }} to unlock <strong>BLACKWALL RESERVE</strong></small>
+  </div>
+  <div class="fund-total"><small>REINVESTED</small><strong>€$ {{ player.maintenance_fund }}</strong><span>{{ player.maintenance_progress_pct }}% secured</span></div>
+</section>
+
 {% if form_error %}<div class="flash flash-error">{{ form_error }}</div>{% endif %}
+
+{% if watched_jobs %}
+<section class="campaign batch-monitor" id="batch-monitor" data-job-ids="{{ watched_jobs|map(attribute='id')|join(',') }}">
+  <header class="section-title"><h2>{{ 'Secured breach queue' if defaults.local_repo_path else 'Parallel breach in progress' }}</h2><span>{{ watched_jobs|length }} contracts {{ 'serialized on the shared local network' if defaults.local_repo_path else 'running together' }}</span></header>
+  <div class="batch-grid">
+    {% for job in watched_jobs %}
+    <a class="gh-box batch-card" href="{{ url_for('job_detail', job_id=job.id) }}" data-job-id="{{ job.id }}">
+      <strong class="batch-status">{{ job.status|replace('_', ' ') }}</strong>
+      <span class="batch-ticket">{{ job.issue_url|replace('https://github.com/', '') }}</span>
+      <small class="batch-stage">{{ job.stage }}</small>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <div class="mission-layout">
   <section class="gh-box issue-board">
@@ -36,16 +64,18 @@
       <div class="board-tabs">
         <span class="board-tab selected">
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill="currentColor" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>
-          {{ tickets|length }} open tickets
+          <span id="ticket-count">{{ tickets|length }}</span> incoming contracts
         </span>
       </div>
-      <span class="board-hint"><button type="button" class="btn btn-small" onclick="resyncBounties(this)">↻ Resync</button> <select id="bounty-sort" class="btn btn-small" onchange="sortBounties(this.value)"><option value="priority">Sort: priority</option><option value="updated">Sort: recently updated</option><option value="title">Sort: title</option></select></span>
+      <input id="ticket-search" class="ticket-search" type="search" placeholder="Search target #1091" aria-label="Search contracts by ticket number or text" oninput="filterTickets(this.value)">
+      <span class="board-hint"><button type="button" class="btn btn-small" onclick="resyncBounties(this)">Breach // Resync</button> <select id="bounty-sort" class="btn btn-small" onchange="sortBounties(this.value)"><option value="priority">Sort: priority</option><option value="updated">Sort: recently updated</option><option value="title">Sort: title</option></select></span>
     </header>
     <div class="issue-list">
-      {% for ticket in tickets[:15] %}
+      {% for ticket in tickets %}
       {% set threat = {'P0':'critical','P1':'high','P2':'medium'}.get(ticket.priority, 'low') %}
-      {% set reward = {'P0':250,'P1':180,'P2':120}.get(ticket.priority, 90) %}
-      <div class="issue-row-wrap" data-url="{{ ticket.url }}" data-key="{{ ticket.key }}" data-priority="{{ ticket.priority }}" data-title="{{ ticket.title|lower }}" data-updated="{{ ticket.updated_at or '' }}">
+      {% set threat_label = {'P0':'CYBERPSYCHO','P1':'HOSTILE','P2':'WATCHED'}.get(ticket.priority, 'CLEAN') %}
+      {% set reward = {'P0':2500,'P1':1800,'P2':1200}.get(ticket.priority, 900) %}
+      <div class="issue-row-wrap" data-url="{{ ticket.url }}" data-key="{{ ticket.key }}" data-priority="{{ ticket.priority }}" data-title="{{ ticket.title|lower }}" data-search="{{ ticket.number }} {{ ticket.title|lower }} {{ ticket.repository|lower }} {{ ticket.labels|lower }} {{ ticket.assignees|lower }}" data-updated="{{ ticket.updated_at or '' }}">
       <button type="button" class="issue-row" onclick="selectMission(this)">
         <span class="issue-open-icon threat-{{ threat }}" aria-hidden="true">
           <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill="currentColor" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>
@@ -59,20 +89,20 @@
           <small class="issue-meta">#{{ ticket.number }} · {{ ticket.repository }} · {{ ticket.assignees or 'unassigned' }} · updated {{ ticket.updated_at[:10] if ticket.updated_at else 'recently' }}</small>
         </span>
         <span class="issue-side">
-          <b class="threat-tag threat-{{ threat }}">{{ threat }} priority</b>
-          <b class="bounty">payoff {{ reward }}</b>
-          <span role="button" class="btn btn-small" onclick="event.stopPropagation(); hideBounty(this.closest('.issue-row-wrap'))">↓ Hide</span>
-          <a class="btn btn-small" href="{{ ticket.url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ Open ticket</a>
+          <b class="threat-tag threat-{{ threat }}">{{ threat_label }}</b>
+          <b class="bounty">€$ {{ reward }}</b>
+          <span role="button" class="btn btn-small" onclick="event.stopPropagation(); hideBounty(this.closest('.issue-row-wrap'))">Purge</span>
+          <a class="btn btn-small" href="{{ ticket.url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Open shard</a>
         </span>
       </button>
       <details class="test-plan" data-key="{{ ticket.key }}" data-url="{{ ticket.url }}">
-        <summary onclick="event.stopPropagation()">🧪 Test plan{{ ' (ready)' if ticket.repro_steps or ticket.pass_steps else '' }}</summary>
+        <summary onclick="event.stopPropagation()">RECON PROTOCOL{{ ' // LOADED' if ticket.repro_steps or ticket.pass_steps else '' }}</summary>
         <div class="test-plan-body" onclick="event.stopPropagation()">
           {% if ticket.repro_steps or ticket.pass_steps %}
           {% if ticket.repro_steps %}<strong>Steps to reproduce</strong><ol>{% for step in ticket.repro_steps %}<li>{{ step }}</li>{% endfor %}</ol>{% endif %}
           {% if ticket.pass_steps %}<strong>Steps to verify the fix</strong><ol>{% for step in ticket.pass_steps %}<li>{{ step }}</li>{% endfor %}</ol>{% endif %}
           {% else %}
-          <button type="button" class="btn btn-small" onclick="generateTestPlan(this)">Generate test plan</button>
+          <button type="button" class="btn btn-small" onclick="generateTestPlan(this)">Compile recon protocol</button>
           {% endif %}
         </div>
       </details>
@@ -80,67 +110,70 @@
       {% else %}
       <div class="empty-state">
         <span aria-hidden="true">⌁</span>
-        <strong>No tickets on the board</strong>
-        <small>Sync GitHub issues from the <a href="{{ url_for('prompts_page') }}">prompt lab</a>, or paste an issue URL in the loadout.</small>
+        <strong>NO CONTRACT SIGNALS</strong>
+        <small>Scan GitHub from the <a href="{{ url_for('prompts_page') }}">prompt forge</a>, then lock a target into the runner loadout.</small>
       </div>
       {% endfor %}
+      {% if tickets %}<div id="ticket-search-empty" class="empty-state" hidden><span aria-hidden="true">⌁</span><strong>NO MATCHING CONTRACTS</strong><small>Adjust the target number or search phrase.</small></div>{% endif %}
     </div>
   </section>
 
   <form method="post" action="{{ url_for('create_job') }}" class="gh-box launch-card" id="mission-form">
-    <header class="gh-box-header"><strong>Configuration</strong><span class="live-dot" id="loadout-state">ready</span></header>
+    <header class="gh-box-header"><strong>Runner loadout</strong><span class="live-dot" id="loadout-state">SYSTEM READY</span></header>
     <div class="form-body">
-      <label>Target issue
-        <input id="issue-url" name="issue_url" type="url" required placeholder="https://github.com/org/repo/issues/123" value="{{ form.issue_url if form else '' }}">
+      <label>Contract targets
+        <input id="issue-url" type="text" readonly required placeholder="Select up to 3 tickets below">
+        <div id="selected-issues"></div>
+        <small>Choose up to 3 contracts. {{ 'Shared local-workspace operations run one at a time to prevent branch and review collisions.' if defaults.local_repo_path else 'Isolated checkouts run concurrently.' }}</small>
       </label>
       <div class="two-col">
-        <label>Base branch<input name="base_branch" required value="{{ form.base_branch if form else 'develop' }}"></label>
-        <label>Branch prefix<input name="branch_prefix" required value="{{ form.branch_prefix if form else 'bug-fix' }}"></label>
+        <label>Insertion point<input name="base_branch" required value="{{ form.base_branch if form else 'develop' }}"></label>
+        <label>Operation prefix<input name="branch_prefix" required value="{{ form.branch_prefix if form else 'bug-fix' }}"></label>
       </div>
 
-      <fieldset class="strategy-set"><legend>Strategy <small>pick your risk curve</small></legend>
+      <fieldset class="strategy-set"><legend>Operation protocol <small>choose your risk curve</small></legend>
         <label class="strategy">
           <input type="radio" name="workflow_profile" value="full_pr" checked>
-          <span class="strategy-copy"><b>⚡ Autopilot</b><small>Full run: investigate → fix → validate → review → PR. Highest throughput, zero mid-run control.</small></span>
-          <span class="strategy-odds">high payoff<br><em>high variance</em></span>
+          <span class="strategy-copy"><b>AUTONOMOUS DAEMON</b><small>Recon → breach → patch → integrity scan → counter-intel → deploy. The runner owns the full intrusion.</small></span>
+          <span class="strategy-odds">€$ MAX<br><em>EXPOSURE // HIGH</em></span>
         </label>
         <label class="strategy">
           <input type="radio" name="workflow_profile" value="investigate_fix">
-          <span class="strategy-copy"><b>🔧 Investigate &amp; fix</b><small>Same investigation, implementation, validation, and review gates — writes code locally but skips commit, push, and PR creation.</small></span>
-          <span class="strategy-odds">code only<br><em>no PR</em></span>
+          <span class="strategy-copy"><b>GHOST PROTOCOL</b><small>Recon, patch, integrity scan, and counter-intel stay local. No remote trace, push, or PR payload.</small></span>
+          <span class="strategy-odds">€$ LOW<br><em>TRACE // ZERO</em></span>
         </label>
       </fieldset>
 
       <div class="risk-box">
-        <div><strong>Fallback: document on failure</strong><small>If the run is blocked, post a diagnosis (missing schema, absent API, failing check) on the ticket so the next attempt starts with information instead of nothing.</small></div>
+        <div><strong>Dead-drop failure intel</strong><small>If the breach is severed, transmit the blocker, evidence, and recovery route back to the contract thread.</small></div>
         <label class="switch"><input type="checkbox" name="comment_on_failure" {% if (form and form.comment_on_failure) or (not form and defaults.comment_on_failure) %}checked{% endif %}><span></span></label>
       </div>
 
-      <details class="advanced-details"><summary>Advanced loadout</summary><div class="advanced">
-        <label>Approval mode<select name="approval_mode"><option value="auto">Automatic gates</option><option value="each_stage">Approve each stage</option></select></label>
-        <label>Coding agent<select name="agent_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="custom">Custom command</option></select></label>
-        <label>Review agent<select name="review_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="custom">Custom command</option></select></label>
-        <label>Coding command<input name="agent_command" value="{{ form.agent_command if form else defaults.agent_command }}" placeholder="Used for Custom command"></label>
-        <label>Review command<input name="review_command" value="{{ form.review_command if form else defaults.review_command }}" placeholder="Used for Custom command"></label>
-        <label>Validation commands<textarea name="validation_commands" rows="3" placeholder="Focused test command&#10;Application build command">{{ form.validation_commands if form else '' }}</textarea><small>Keep this lightweight: one focused test plus the application build. One command per line; no shell operators.</small></label>
-        <label class="check"><input type="checkbox" name="close_issue_on_merge" {% if (form and form.close_issue_on_merge) or (not form and defaults.close_issue_on_merge) %}checked{% endif %}><span>Close issue when a default-branch PR merges</span></label>
+      <details class="advanced-details"><summary>Open ripperdoc loadout</summary><div class="advanced">
+        <label>Human gate<select name="approval_mode"><option value="auto">Daemon-authorized gates</option><option value="each_stage">Authorize every breach stage</option></select></label>
+        <label>Primary runner<select name="agent_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="custom">Custom daemon</option></select></label>
+        <label>Counter-intel runner<select name="review_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="custom">Custom daemon</option></select></label>
+        <label>Runner executable<input name="agent_command" value="{{ form.agent_command if form else defaults.agent_command }}" placeholder="Custom daemon command"></label>
+        <label>Counter-intel executable<input name="review_command" value="{{ form.review_command if form else defaults.review_command }}" placeholder="Custom daemon command"></label>
+        <label>Integrity scripts<textarea name="validation_commands" rows="3" placeholder="Focused test command&#10;Application build command">{{ form.validation_commands if form else '' }}</textarea><small>One focused scan and one build check per line. Shell operators remain air-gapped.</small></label>
+        <label class="check"><input type="checkbox" name="close_issue_on_merge" {% if (form and form.close_issue_on_merge) or (not form and defaults.close_issue_on_merge) %}checked{% endif %}><span>Flatline contract after default-branch deployment</span></label>
       </div></details>
 
       <div class="launch-row">
-        <button class="btn-launch btn-launch-openai" type="button" onclick="launchHigh(this.form)" title="Overrides the model to gpt-5.6-sol at low reasoning effort. Strongest model, kept fast by running its thinking at low effort."><span><small>OPENAI</small>Run (High Model)<em>gpt-5.6-sol · low effort</em></span><b>→</b></button>
-        <button class="btn-launch btn-launch-openai btn-launch-ultra" type="button" onclick="launchUltra(this.form)" title="Overrides the model to gpt-5.6-luna at low reasoning effort. Faster and cheaper, lower ceiling on hard tickets."><span><small>OPENAI</small>Run (fast model)<em>gpt-5.6-luna · low effort</em></span><b>→</b></button>
-        <button class="btn-launch btn-launch-anthropic" type="button" onclick="launchClaude(this.form, 'sonnet')" title="Claude Sonnet: balanced speed and capability, the default choice for most tickets."><span><small>ANTHROPIC</small>Run Claude Sonnet<em>claude-sonnet-4-6</em></span><b>→</b></button>
-        <button class="btn-launch btn-launch-anthropic btn-launch-anthropic-opus" type="button" onclick="launchClaude(this.form, 'opus')" title="Claude Opus: highest capability, slower and more expensive. Best for tickets that need deeper reasoning."><span><small>ANTHROPIC</small>Run Claude Opus<em>claude-opus-4-7</em></span><b>→</b></button>
+        <button class="btn-launch btn-launch-openai" type="button" onclick="launchHigh(this.form)" title="Deploy the highest-capability OpenAI runner at low reasoning effort."><span><small>OPENAI // HEAVY</small>Initiate deep breach<em>gpt-5.6-sol · overclock low</em></span><b>›</b></button>
+        <button class="btn-launch btn-launch-openai btn-launch-ultra" type="button" onclick="launchUltra(this.form)" title="Deploy the fast OpenAI runner at low reasoning effort."><span><small>OPENAI // BLITZ</small>Initiate quickhack<em>gpt-5.6-luna · overclock low</em></span><b>›</b></button>
+        <button class="btn-launch btn-launch-anthropic" type="button" onclick="launchClaude(this.form, 'sonnet')" title="Deploy Claude Sonnet for a balanced breach."><span><small>ANTHROPIC // RECON</small>Deploy Sonnet daemon<em>claude-sonnet-4-6</em></span><b>›</b></button>
+        <button class="btn-launch btn-launch-anthropic btn-launch-anthropic-opus" type="button" onclick="launchClaude(this.form, 'opus')" title="Deploy Claude Opus for maximum-depth analysis."><span><small>ANTHROPIC // BLACK ICE</small>Deploy Opus daemon<em>claude-opus-4-7</em></span><b>›</b></button>
       </div>
-      <p class="safety">MergeQuest never merges without you.</p>
+      <p class="safety">HUMAN-IN-THE-LOOP LOCK // no payload merges without your authorization</p>
     </div>
   </form>
 </div>
 
 <section class="campaign">
-  <header class="section-title"><h2>Run log</h2><span>{{ jobs|length }} run{{ '' if jobs|length == 1 else 's' }} recorded</span></header>
+  <header class="section-title"><h2>Operation archive</h2><span>{{ jobs|length }} contract{{ '' if jobs|length == 1 else 's' }} recorded</span></header>
   <div class="gh-box table-wrap"><table>
-    <thead><tr><th>Run</th><th>Target</th><th>Base</th><th>Outcome</th><th>Payoff</th><th>Last move</th></tr></thead>
+    <thead><tr><th>Operation</th><th>Target</th><th>Insertion</th><th>Status</th><th>Intel</th><th>Last signal</th></tr></thead>
     <tbody>
     {% for job in jobs[:30] %}
     <tr>
@@ -148,52 +181,86 @@
       <td class="truncate">{{ job.issue_url|replace('https://github.com/', '') }}</td>
       <td><code>{{ job.base_branch }}</code></td>
       <td><span class="state state-{{ job.status }}">{{ job.status|replace('_', ' ') }}</span></td>
-      <td class="payout">{% if job.status == 'completed' %}equilibrium{% elif job.status == 'failed' %}diagnosis filed{% elif job.status in ['queued','running','waiting_approval'] %}<span class="in-play">in play</span>{% else %}—{% endif %}</td>
+      <td class="payout">{% if job.status == 'completed' %}TARGET FLATLINED{% elif job.status == 'failed' %}INTEL EXTRACTED{% elif job.status in ['queued','running','waiting_approval'] %}<span class="in-play">BREACH ACTIVE</span>{% else %}SIGNAL LOST{% endif %}</td>
       <td class="muted-cell">{{ job.updated_at[:16].replace('T', ' ') }}</td>
     </tr>
-    {% else %}<tr><td colspan="6" class="muted">No runs yet. Start one above.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="6" class="muted">NO CONTRACT HISTORY // lock a target above</td></tr>{% endfor %}
     </tbody>
   </table></div>
 </section>
 
 <section class="campaign">
-  <header class="section-title"><h2>The garage</h2><span>collect a French classic at every level · {{ player.unlocked_count }} achievements unlocked</span></header>
-  <div class="garage-shelf">
-    {% for c in player.garage %}
-    <div class="garage-slot {{ 'owned' if c.unlocked else 'locked' }}" title="{{ c.name }} — {{ c.rate }} ₣/hr">
-      <span class="garage-slot-car">{{ c.emoji if c.unlocked else '🔒' }}</span>
-      <strong>{{ c.name }}</strong>
-      <small>{{ c.rate }} ₣/hr</small>
+  <header class="section-title"><h2>Encrypted accolades</h2><span>{{ player.rank }} · {{ player.unlocked_count }}/{{ player.achievements|length }} decrypted</span></header>
+  <div class="cred-strip" aria-label="Encrypted accolades">
+    {% for achievement in player.achievements %}
+    <div class="cred-node {{ 'unlocked' if achievement.unlocked else 'locked' }}" title="{{ achievement.desc }}">
+      <b>{{ achievement.icon }}</b><span><strong>{{ achievement.name }}</strong><small>{{ achievement.desc }}</small></span>
     </div>
     {% endfor %}
   </div>
 </section>
 
+<div id="breach-protocol" class="breach-protocol" hidden role="dialog" aria-modal="true" aria-labelledby="breach-title">
+  <div class="breach-noise" aria-hidden="true"></div>
+  <div class="breach-shell">
+    <header class="breach-header">
+      <div><small>NETWATCH INTERFACE // MQ-77</small><h2 id="breach-title">Breach Protocol</h2></div>
+      <div class="breach-clock"><span>TIME REMAINING</span><strong id="breach-time">10.0</strong></div>
+    </header>
+    <div class="breach-rule"><span></span><b>ICE</b><span></span></div>
+    <div class="breach-layout">
+      <section class="breach-matrix-wrap" aria-label="Code matrix">
+        <header><strong>CODE MATRIX</strong><span>SELECTING OPTIMAL PATH...</span></header>
+        <div id="breach-matrix" class="breach-matrix"></div>
+      </section>
+      <aside class="breach-daemons">
+        <header><strong>UPLINK DAEMONS</strong><span>AUTO-SOLVE ENABLED</span></header>
+        <div class="daemon-row active"><span><b>GITHUB_SYNC</b><small>Acquire contract shards</small></span><i>UPLOAD</i></div>
+        <div class="daemon-row"><span><b>PRIORITY_SCAN</b><small>Decode threat labels</small></span><i>QUEUED</i></div>
+        <div class="daemon-row"><span><b>QUEUE_REBUILD</b><small>Reindex target network</small></span><i>QUEUED</i></div>
+        <div class="breach-buffer-label"><span>BUFFER</span><small id="breach-buffer-count">0 / 6</small></div>
+        <div id="breach-buffer" class="breach-buffer"></div>
+      </aside>
+    </div>
+    <footer class="breach-footer">
+      <div><span id="breach-status">INITIALIZING NEURAL HANDSHAKE</span><small id="breach-targets"></small></div>
+      <div class="breach-progress"><i id="breach-progress"></i></div>
+      <strong id="breach-percent">00%</strong>
+    </footer>
+  </div>
+</div>
+
 <script>
-// Idle-game live franc ticker: climb from banked francs at the fleet's ₣/hr rate.
+// Passive network-yield ticker: cleared contracts keep generating eurodollars.
 (function () {
-  const hud = document.querySelector('.garage-hud');
-  const counter = document.querySelector('.franc-counter');
+  const hud = document.querySelector('.streetcred-hud');
+  const counter = document.querySelector('.credit-counter');
   if (!hud || !counter) return;
   const perSecond = (parseFloat(hud.dataset.rate) || 0) / 3600;
   const start = parseFloat(hud.dataset.banked) || 0;
   const t0 = performance.now();
   function tick(now) {
-    const francs = start + perSecond * (now - t0) / 1000;
-    counter.textContent = Math.floor(francs).toLocaleString();
+    const credits = start + perSecond * (now - t0) / 1000;
+    counter.textContent = Math.floor(credits).toLocaleString();
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
 })();
 function selectMission(button) {
   const wrap = button.closest('.issue-row-wrap');
-  document.querySelectorAll('.issue-row').forEach(row => row.classList.remove('selected'));
-  button.classList.add('selected');
-  document.getElementById('issue-url').value = wrap.dataset.url;
+  const selected = [...document.querySelectorAll('.issue-row.selected')];
+  if (!button.classList.contains('selected') && selected.length >= 3) {
+    alert('You can run up to 3 tickets at a time.');
+    return;
+  }
+  button.classList.toggle('selected');
+  const urls = [...document.querySelectorAll('.issue-row.selected')].map(row => row.closest('.issue-row-wrap').dataset.url);
+  document.getElementById('issue-url').value = urls.length ? `${urls.length} ticket${urls.length === 1 ? '' : 's'} selected` : '';
+  document.getElementById('selected-issues').replaceChildren(...urls.map(url => { const input = document.createElement('input'); input.type = 'hidden'; input.name = 'issue_url'; input.value = url; return input; }));
   const state = document.getElementById('loadout-state');
-  state.textContent = 'target locked';
-  state.classList.add('locked');
-  document.getElementById('mission-form').scrollIntoView({behavior: 'smooth', block: 'center'});
+  state.textContent = urls.length ? `${urls.length} target${urls.length === 1 ? '' : 's'} locked` : 'ready';
+  state.classList.toggle('locked', urls.length > 0);
+  if (urls.length === 1) document.getElementById('mission-form').scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 function hideBounty(wrap) {
   const hidden = JSON.parse(localStorage.getItem('mergequest-hidden-bounties') || '[]');
@@ -232,25 +299,198 @@ function launchClaude(form, model) {
   form.review_command.value = command;
   form.requestSubmit();
 }
+
+const BREACH_CODES = ['1C', '55', 'BD', 'E9', '7A', 'FF'];
+const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+function createBreachPath(size, length) {
+  const path = [];
+  let row = 0;
+  let col = Math.floor(Math.random() * size);
+  path.push({row, col});
+  for (let index = 1; index < length; index += 1) {
+    if (index % 2) {
+      let nextRow;
+      do nextRow = Math.floor(Math.random() * size); while (nextRow === row);
+      row = nextRow;
+    } else {
+      let nextCol;
+      do nextCol = Math.floor(Math.random() * size); while (nextCol === col);
+      col = nextCol;
+    }
+    path.push({row, col});
+  }
+  return path;
+}
+
+function markBreachCandidates(cells, path, step) {
+  cells.forEach(cell => cell.classList.remove('candidate'));
+  if (step >= path.length) return;
+  const next = path[step];
+  const previous = path[step - 1];
+  cells.forEach(cell => {
+    const row = Number(cell.dataset.row);
+    const col = Number(cell.dataset.col);
+    const eligible = !previous || (next.row === previous.row ? row === previous.row : col === previous.col);
+    if (eligible && !cell.classList.contains('selected')) cell.classList.add('candidate');
+  });
+}
+
+function runBreachProtocol(repositories) {
+  const overlay = document.getElementById('breach-protocol');
+  const matrix = document.getElementById('breach-matrix');
+  const buffer = document.getElementById('breach-buffer');
+  const status = document.getElementById('breach-status');
+  const time = document.getElementById('breach-time');
+  const progress = document.getElementById('breach-progress');
+  const percent = document.getElementById('breach-percent');
+  const bufferCount = document.getElementById('breach-buffer-count');
+  const daemonRows = [...overlay.querySelectorAll('.daemon-row')];
+  const size = 8;
+  const path = createBreachPath(size, 6);
+  const values = Array.from({length: size * size}, () => BREACH_CODES[Math.floor(Math.random() * BREACH_CODES.length)]);
+
+  overlay.className = 'breach-protocol active';
+  overlay.hidden = false;
+  document.body.classList.add('breach-active');
+  document.getElementById('breach-targets').textContent = `TARGETS // ${repositories.join(' · ')}`;
+  matrix.replaceChildren();
+  buffer.replaceChildren();
+  daemonRows.forEach((row, index) => {
+    row.className = `daemon-row${index === 0 ? ' active' : ''}`;
+    row.querySelector('i').textContent = index === 0 ? 'UPLOAD' : 'QUEUED';
+  });
+
+  const cells = values.map((value, index) => {
+    const cell = document.createElement('span');
+    cell.className = 'breach-code';
+    cell.dataset.row = Math.floor(index / size);
+    cell.dataset.col = index % size;
+    cell.textContent = value;
+    matrix.appendChild(cell);
+    return cell;
+  });
+  path.forEach(() => {
+    const slot = document.createElement('span');
+    slot.textContent = '--';
+    buffer.appendChild(slot);
+  });
+  markBreachCandidates(cells, path, 0);
+
+  const messages = [
+    'SCANNING CODE MATRIX',
+    'BUFFER LINK ESTABLISHED',
+    'GITHUB UPLINK ACQUIRED',
+    'DECODING THREAT SIGNATURES',
+    'REBUILDING CONTRACT INDEX',
+    'EXECUTING UPLOADED DAEMONS',
+  ];
+
+  path.forEach((coordinate, index) => {
+    setTimeout(() => {
+      const cell = cells[coordinate.row * size + coordinate.col];
+      cell.classList.remove('candidate');
+      cell.classList.add('selected');
+      const slot = buffer.children[index];
+      slot.textContent = cell.textContent;
+      slot.classList.add('filled');
+      bufferCount.textContent = `${index + 1} / ${path.length}`;
+      status.textContent = messages[index];
+      markBreachCandidates(cells, path, index + 1);
+      if (index === 1) {
+        daemonRows[0].className = 'daemon-row complete';
+        daemonRows[0].querySelector('i').textContent = 'INSTALLED';
+        daemonRows[1].className = 'daemon-row active';
+        daemonRows[1].querySelector('i').textContent = 'UPLOAD';
+      } else if (index === 3) {
+        daemonRows[1].className = 'daemon-row complete';
+        daemonRows[1].querySelector('i').textContent = 'INSTALLED';
+        daemonRows[2].className = 'daemon-row active';
+        daemonRows[2].querySelector('i').textContent = 'UPLOAD';
+      } else if (index === 5) {
+        daemonRows[2].className = 'daemon-row complete';
+        daemonRows[2].querySelector('i').textContent = 'INSTALLED';
+      }
+    }, 1100 + index * 1250);
+  });
+
+  return new Promise(resolve => {
+    const duration = 10000;
+    const started = performance.now();
+    function tick(now) {
+      const elapsed = Math.min(duration, now - started);
+      const ratio = elapsed / duration;
+      const value = Math.min(99, Math.floor(ratio * 100));
+      time.textContent = Math.max(0, (duration - elapsed) / 1000).toFixed(1);
+      progress.style.width = `${value}%`;
+      percent.textContent = `${String(value).padStart(2, '0')}%`;
+      if (elapsed < duration) requestAnimationFrame(tick);
+      else {
+        status.textContent = 'AWAITING NETWORK RESPONSE';
+        resolve();
+      }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+function finishBreachProtocol(success, message) {
+  const overlay = document.getElementById('breach-protocol');
+  overlay.classList.add(success ? 'success' : 'failed');
+  document.getElementById('breach-status').textContent = message;
+  document.getElementById('breach-progress').style.width = '100%';
+  document.getElementById('breach-percent').textContent = '100%';
+}
+
+function closeBreachProtocol() {
+  document.getElementById('breach-protocol').hidden = true;
+  document.body.classList.remove('breach-active');
+}
+
 async function resyncBounties(button) {
   const repos = [...new Set([...document.querySelectorAll('.issue-row-wrap')].map(row => row.dataset.url.split('/').slice(3,5).join('/')))];
-  if (!repos.length) { alert('No bounties on the board yet, so there is no repository to resync. Paste an issue URL in the loadout first.'); return; }
-  button.disabled = true; button.textContent = '↻ Syncing…';
+  if (!repos.length) { alert('No contract signals are available to breach. Scan a repository from the Prompt Forge first.'); return; }
+  button.disabled = true;
+  button.textContent = 'Breach active...';
   try {
-    const results = await Promise.all(repos.map(async repository => {
+    const syncOutcome = Promise.all(repos.map(async repository => {
       const res = await fetch('/tickets/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({repository})});
       const data = await res.json();
       if (!res.ok) throw new Error(`${repository}: ${data.error || res.status}`);
       return data;
-    }));
+    })).then(results => ({results}), error => ({error}));
+    const [, outcome] = await Promise.all([runBreachProtocol(repos), syncOutcome]);
+    if (outcome.error) {
+      finishBreachProtocol(false, 'BREACH FAILED // ICE REJECTED UPLINK');
+      await delay(900);
+      closeBreachProtocol();
+      throw outcome.error;
+    }
+    finishBreachProtocol(true, 'BREACH COMPLETE // CONTRACT SHARDS ACQUIRED');
+    await delay(900);
     location.reload();
   } catch (err) {
-    alert('Resync failed: ' + err.message);
-    button.disabled = false; button.textContent = '↻ Resync';
+    alert('Breach failed: ' + err.message);
+    button.disabled = false;
+    button.textContent = 'Breach // Resync';
   }
 }
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function filterTickets(query) {
+  const needle = query.trim().toLowerCase();
+  const rows = [...document.querySelectorAll('.issue-row-wrap')];
+  let visible = 0;
+  rows.forEach(row => {
+    const match = !needle || (row.dataset.search || '').includes(needle);
+    row.hidden = !match;
+    if (match) visible++;
+  });
+  const count = document.getElementById('ticket-count');
+  if (count) count.textContent = needle ? `${visible}/${rows.length}` : rows.length;
+  const empty = document.getElementById('ticket-search-empty');
+  if (empty) empty.hidden = !needle || visible > 0;
 }
 async function generateTestPlan(button) {
   const wrap = button.closest('.issue-row-wrap');
@@ -264,12 +504,29 @@ async function generateTestPlan(button) {
     if (plan.repro_steps && plan.repro_steps.length) html += '<strong>Steps to reproduce</strong><ol>' + plan.repro_steps.map(s => `<li>${escapeHtml(s)}</li>`).join('') + '</ol>';
     if (plan.pass_steps && plan.pass_steps.length) html += '<strong>Steps to verify the fix</strong><ol>' + plan.pass_steps.map(s => `<li>${escapeHtml(s)}</li>`).join('') + '</ol>';
     body.innerHTML = html || '<em>No steps returned.</em>';
-    wrap.querySelector('.test-plan summary').textContent = '🧪 Test plan (ready)';
+    wrap.querySelector('.test-plan summary').textContent = 'RECON PROTOCOL // LOADED';
   } catch (err) {
-    button.disabled = false; button.textContent = 'Generate test plan';
+    button.disabled = false; button.textContent = 'Compile recon protocol';
     alert(err.message);
   }
 }
 document.querySelectorAll('.issue-row-wrap').forEach(wrap => { if (JSON.parse(localStorage.getItem('mergequest-hidden-bounties') || '[]').includes(wrap.dataset.key)) wrap.style.order = 999; });
+(function watchBatch() {
+  const monitor = document.getElementById('batch-monitor');
+  if (!monitor) return;
+  const ids = monitor.dataset.jobIds.split(',');
+  async function refreshBatch() {
+    const jobs = await Promise.all(ids.map(async id => (await fetch(`/api/jobs/${id}`)).json()));
+    jobs.forEach(job => {
+      const card = monitor.querySelector(`[data-job-id="${job.id}"]`);
+      if (!card) return;
+      card.querySelector('.batch-status').textContent = job.status.replaceAll('_', ' ');
+      card.querySelector('.batch-stage').textContent = job.stage || '';
+      card.classList.toggle('batch-done', ['completed', 'failed', 'stopped'].includes(job.status));
+    });
+    if (jobs.some(job => ['queued', 'running', 'waiting_approval'].includes(job.status))) setTimeout(refreshBatch, 1000);
+  }
+  refreshBatch();
+})();
 </script>
 {% endblock %}

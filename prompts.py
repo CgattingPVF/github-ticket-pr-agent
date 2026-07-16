@@ -47,7 +47,7 @@ MANDATORY PROCESS
 3. Do not assume the ticket's proposed cause is correct. Establish the root cause using code, tests, logs, types, or data flow.
 4. Make the smallest safe change. Required API schema changes and migrations are allowed when supported by repository conventions and tests. Do not make unrelated refactors, dependency upgrades, migrations, or formatting sweeps.
 5. Preserve backwards compatibility unless the ticket explicitly requires a breaking change.
-6. Add or update focused tests that fail before the fix and pass after it where practical.
+6. Do not add, update, rename, or delete test files. Pull requests created by this workflow must contain production changes only.
 7. Run one focused pass/fail test for the changed behavior and the narrowest available application build check. Avoid exhaustive repository-wide suites unless the ticket specifically requires them.
 8. Inspect the final diff for secrets, generated files, accidental deletions, debug code, and unrelated edits.
 9. Do not commit, push, create a PR, modify GitHub, or change git remotes. The surrounding application handles GitHub operations.
@@ -106,7 +106,7 @@ INTERACTIVE STAGE CONTROL (MANDATORY)
 
 STAGES
 1. Investigate the ticket and repository instructions; reproduce or prove the root cause.
-2. Implement the smallest safe fix and focused tests. Do not commit, push, or access GitHub.
+2. Implement the smallest safe fix without changing test files. Do not commit, push, or access GitHub.
 3. Inspect the diff and run the relevant tests, lint, type checks, or builds.
 4. Independently review the change without editing source files.
 5. If the review has HIGH or CRITICAL findings, ask permission before repairing them, then repeat validation and review as needed.
@@ -125,7 +125,8 @@ Act as an independent senior code reviewer. Review the current working-tree chan
 RULES
 - Review only the changed diff and the directly affected surrounding code. Do not scan the entire repository or run a full test suite.
 - Finish within a few minutes; produce the review artifact as soon as the changed paths have been assessed.
-- Do not edit source files.
+- The checkout is an isolated read-only review snapshot. Do not edit, delete, rename, format, or create source files.
+- Your only permitted write is `.ticket-agent/review.json`. Report suggested fixes as findings; never implement them during review.
 - Check correctness, regression risk, security, authorization, data integrity, concurrency, error handling, compatibility, tests, and whether the change actually addresses the ticket's root cause.
 - Ignore cosmetic preferences unless they create a real maintenance or correctness problem.
 - Findings must be specific and actionable. Use HIGH only for a merge-blocking defect, security issue, data-loss risk, or clear failure to satisfy the ticket.

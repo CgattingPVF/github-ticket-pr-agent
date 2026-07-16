@@ -1,53 +1,55 @@
 {% extends "base.html" %}
-{% block title %}Prompt lab · MergeQuest{% endblock %}
+{% block title %}Prompt forge · Neon Ops{% endblock %}
 {% block content %}
 <section class="lab-head">
   <div>
-    <h1>Prompt lab</h1>
-    <p>Sync your GitHub queue, pick a ticket, and build an investigation, review, or all-in-one prompt with the branch settings baked in.</p>
+    <p class="eyebrow">DATA SHARD FABRICATION</p>
+    <h1>Prompt forge</h1>
+    <p>Sync the contract network, lock a target, and forge an investigation, audit, or full-operation protocol.</p>
   </div>
   <div class="lab-auth">
-    <span id="auth-status" hidden><a class="btn" href="/logout">Sign out of GitHub</a></span>
-    <span id="no-auth-status"><a class="btn btn-primary" href="/login">Sign in with GitHub</a></span>
+    <span id="auth-status" hidden><a class="btn" href="/logout">Jack out</a></span>
+    <span id="no-auth-status"><a class="btn btn-primary" href="/login">Jack in // GitHub</a></span>
   </div>
 </section>
 
 <div class="lab-layout">
   <section class="gh-box">
     <header class="gh-box-header">
-      <strong>Ticket queue</strong>
-      <span class="board-hint">GitHub is the source of truth · priority from P0/P1/P2 labels</span>
+      <strong>Incoming contract feed</strong>
+      <span class="board-hint">SOURCE // GITHUB · THREAT CODE // P0-P2</span>
     </header>
     <div class="form-body">
-      <label>Repository<input type="text" id="repository" value="pvfscaffolding/crm-staff-desktop" placeholder="owner/repository"></label>
+      <label>Network district<input type="text" id="repository" value="pvfscaffolding/crm-staff-desktop" placeholder="owner/repository"></label>
       <div class="lab-sync-row">
         <div id="ticketStatus" class="sync-status"></div>
-        <button class="btn btn-primary" onclick="syncGithub()">↻ Sync GitHub issues</button>
+        <button class="btn btn-primary" onclick="syncGithub()">Scan GitHub network</button>
       </div>
+      <label>Target search<input id="queue-search" type="search" placeholder="Ticket number e.g. 1091" aria-label="Search synced tickets" oninput="filterSyncedTickets(this.value)"></label>
       <div class="issue-list" id="ticketQueue"></div>
     </div>
   </section>
 
   <section class="gh-box">
-    <header class="gh-box-header"><strong>Build a prompt</strong><span class="board-hint">pick a ticket or paste an issue URL</span></header>
+    <header class="gh-box-header"><strong>Forge data shard</strong><span class="board-hint">lock a contract or paste target coordinates</span></header>
     <div class="form-body">
-      <label>Issue URL<input type="text" id="issueUrl" placeholder="https://github.com/owner/repo/issues/123"></label>
+      <label>Target coordinates<input type="text" id="issueUrl" placeholder="https://github.com/owner/repo/issues/123"></label>
       <div class="two-col">
-        <label>Base branch<input type="text" id="baseBranch" value="develop"></label>
-        <label>Branch prefix<input type="text" id="branchPrefix" value="bug-fix"></label>
+        <label>Insertion point<input type="text" id="baseBranch" value="develop"></label>
+        <label>Operation prefix<input type="text" id="branchPrefix" value="bug-fix"></label>
       </div>
       <div class="lab-actions">
-        <button class="btn btn-primary" onclick="generatePrompt('investigation')">🔍 Investigation prompt</button>
-        <button class="btn" onclick="generatePrompt('review')">🧐 Review prompt</button>
-        <button class="btn" onclick="generatePrompt('all-in-one')">🎯 All-in-one prompt</button>
-        <a class="btn btn-launch-small" href="/jobs">▶ Run from the dashboard instead</a>
+        <button class="btn btn-primary" onclick="generatePrompt('investigation')">Forge investigation</button>
+        <button class="btn" onclick="generatePrompt('review')">Forge audit</button>
+        <button class="btn" onclick="generatePrompt('all-in-one')">Forge full operation</button>
+        <a class="btn btn-launch-small" href="/jobs">Deploy from contracts</a>
       </div>
     </div>
   </section>
 </div>
 
 <div id="output-wrap" hidden>
-  <header class="section-title"><h2>Forged prompt</h2><button id="copyBtn" class="btn btn-small" onclick="copyOutput()">Copy prompt</button></header>
+  <header class="section-title"><h2>Data shard // ready</h2><button id="copyBtn" class="btn btn-small" onclick="copyOutput()">Copy shard</button></header>
   <pre id="output" class="logs prompt-output"></pre>
 </div>
 
@@ -89,21 +91,21 @@ function showOutput(text) {
 function copyOutput() {
   navigator.clipboard.writeText(document.getElementById('output').textContent).then(() => {
     const btn = document.getElementById('copyBtn');
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = 'Copy prompt'; }, 2000);
+    btn.textContent = 'SHARD COPIED';
+    setTimeout(() => { btn.textContent = 'Copy shard'; }, 2000);
   }).catch(err => alert('Failed to copy: ' + err));
 }
 
 async function syncGithub() {
   const status = document.getElementById('ticketStatus');
-  status.textContent = 'Syncing…';
+  status.textContent = 'SCANNING NETWORK…';
   const res = await fetch('/tickets/sync', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({repository: document.getElementById('repository').value})
   });
   const data = await res.json();
-  status.textContent = data.error || `Synced ${data.count} tickets`;
+  status.textContent = data.error || `${data.count} ELIGIBLE CONTRACTS // ${data.synced_count ?? data.count} OPEN ISSUES SCANNED`;
   loadTickets();
 }
 
@@ -113,15 +115,17 @@ async function loadTickets() {
   const queue = document.getElementById('ticketQueue');
   queue.replaceChildren();
   if (!data.tickets.length) {
-    queue.innerHTML = '<div class="empty-state"><span>⌁</span><strong>No synced issues</strong><small>Sync a repository above to fill the queue.</small></div>';
+    queue.innerHTML = '<div class="empty-state"><span>⌁</span><strong>NO CONTRACT SIGNALS</strong><small>Scan a network district to acquire targets.</small></div>';
     return;
   }
   const threatOf = p => ({P0: 'critical', P1: 'high', P2: 'medium'}[p] || 'low');
+  const threatName = p => ({P0: 'CYBERPSYCHO', P1: 'HOSTILE', P2: 'WATCHED'}[p] || 'CLEAN');
   for (const t of data.tickets) {
     const threat = threatOf(t.priority);
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'issue-row';
+    row.dataset.search = [t.number, t.title, t.repository, t.labels, t.assignees].filter(Boolean).join(' ').toLowerCase();
     row.addEventListener('click', () => useTicket(t.url, row));
     const labels = (t.labels || '').split(',').filter(l => l.trim())
       .map(l => `<i class="gh-label">${l.trim()}</i>`).join('');
@@ -130,12 +134,47 @@ async function loadTickets() {
       <span class="issue-main">
         <span class="issue-title"></span>
         <span class="issue-labels">${t.priority ? `<i class="gh-label threat-${threat}">${t.priority}</i>` : ''}${labels}</span>
-        <small class="issue-meta">#${t.number} · ${t.assignees || 'unassigned'} · updated ${String(t.updated_at || '').slice(0, 10)}</small>
+        <small class="issue-meta">#${t.number} // HANDLER ${t.assignees || 'UNASSIGNED'} // SIGNAL ${String(t.updated_at || '').slice(0, 10)}</small>
       </span>
-      <span class="issue-side"><b class="threat-tag threat-${threat}">${threat}</b></span>`;
+      <span class="issue-side"><b class="threat-tag threat-${threat}">${threatName(t.priority)}</b></span>`;
     row.querySelector('.issue-title').textContent = t.title;
     queue.appendChild(row);
   }
+  const empty = document.createElement('div');
+  empty.id = 'queue-search-empty';
+  empty.className = 'empty-state';
+  empty.hidden = true;
+  empty.innerHTML = '<span>⌁</span><strong>NO MATCHING CONTRACTS</strong><small>Adjust the target number or search phrase.</small>';
+  queue.appendChild(empty);
+  filterSyncedTickets(document.getElementById('queue-search')?.value || '');
+}
+
+function filterTickets(query) {
+  const needle = query.trim().toLowerCase();
+  const rows = [...document.querySelectorAll('.issue-row-wrap')];
+  let visible = 0;
+  rows.forEach(row => {
+    const match = !needle || (row.dataset.search || '').includes(needle);
+    row.hidden = !match;
+    if (match) visible++;
+  });
+  const count = document.getElementById('ticket-count');
+  if (count) count.textContent = needle ? `${visible}/${rows.length}` : rows.length;
+  const empty = document.getElementById('ticket-search-empty');
+  if (empty) empty.hidden = !needle || visible > 0;
+}
+
+function filterSyncedTickets(query) {
+  const needle = query.trim().toLowerCase();
+  const rows = [...document.querySelectorAll('#ticketQueue .issue-row')];
+  let visible = 0;
+  rows.forEach(row => {
+    const match = !needle || (row.dataset.search || '').includes(needle);
+    row.hidden = !match;
+    if (match) visible++;
+  });
+  const empty = document.getElementById('queue-search-empty');
+  if (empty) empty.hidden = !needle || visible > 0;
 }
 
 function useTicket(url, row) {

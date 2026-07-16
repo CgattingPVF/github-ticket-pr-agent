@@ -4,46 +4,47 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>{% block title %}MergeQuest{% endblock %} · MergeQuest</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
+  <title>{% block title %}Neon Ops{% endblock %} · MergeQuest</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%2307090d'/><path d='M12 58 42 10h24L48 43h38L51 92H27l24-34z' fill='%23fcee09'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
   <header class="gh-header">
     <div class="gh-header-inner">
       <a href="{{ url_for('index') }}" class="brand">
-        <svg class="octomark" viewBox="0 0 16 16" width="30" height="30" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.01 8.01 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A8.01 8.01 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-        <strong>MergeQuest</strong>
-        <span class="brand-slash">/</span>
-        <span class="brand-repo">ticket-pr-agent</span>
+        <span class="brand-mark" aria-hidden="true">M<span>Q</span></span>
+        <span class="brand-lockup"><strong>MERGEQUEST</strong><small>NEON OPS // BUILD 2.077</small></span>
       </a>
-      <span class="private-badge">Agent</span>
+      <span class="private-badge">NETRUNNER OS</span>
       <div class="header-right">
-        <span class="guard-pill"><i class="pulse-dot"></i>Guardrails online · humans own every merge</span>
+        <span class="guard-pill"><i class="pulse-dot"></i>SECURITY GATES ONLINE</span>
         {% if session.get('github_login') %}
-          <span class="muted-cell">@{{ session.get('github_login') }}</span><a class="btn btn-small" href="{{ url_for('logout') }}">Sign out</a>
+          <span class="muted-cell">@{{ session.get('github_login') }}</span><a class="btn btn-small" href="{{ url_for('logout') }}">Jack out</a>
         {% else %}
-          <a class="btn btn-primary btn-small" href="{{ url_for('login') }}">Sign in with GitHub</a>
+          <a class="btn btn-primary btn-small" href="{{ url_for('login') }}">Jack in // GitHub</a>
         {% endif %}
       </div>
     </div>
     <nav class="tabnav" aria-label="Primary">
       <a href="{{ url_for('index') }}" class="{{ 'selected' if request.endpoint in ['index', 'job_detail'] else '' }}">
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill="currentColor" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>
-        Runs
+        <small>01</small> Contracts
       </a>
       <a href="{{ url_for('prompts_page') }}" class="{{ 'selected' if request.endpoint == 'prompts_page' else '' }}">
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Z"/></svg>
-        Prompt lab
+        <small>02</small> Prompt forge
       </a>
-      <a href="{{ url_for('leaderboard_page') }}" class="{{ 'selected' if request.endpoint == 'leaderboard_page' else '' }}">🏆 Leaderboard &amp; stats</a>
-      <a href="{{ url_for('settings_page') }}" class="{{ 'selected' if request.endpoint == 'settings_page' else '' }}">⚙ Settings</a>
+      <a href="{{ url_for('leaderboard_page') }}" class="{{ 'selected' if request.endpoint == 'leaderboard_page' else '' }}"><small>03</small> Merc rankings</a>
+      <a href="{{ url_for('settings_page') }}" class="{{ 'selected' if request.endpoint == 'settings_page' else '' }}"><small>04</small> System</a>
     </nav>
   </header>
   <main class="shell">{% block content %}{% endblock %}</main>
   <footer class="gh-footer">
-    <svg class="octomark dim" viewBox="0 0 16 16" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.01 8.01 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A8.01 8.01 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-    <span><strong>MergeQuest</strong> turns issue work into an evidence-gated campaign. Every merge still needs a human.</span>
+    <span class="footer-sigil" aria-hidden="true">///</span>
+    <span><strong>MERGEQUEST // NEON OPS</strong> · Evidence-gated autonomous operations · Human authorization owns every merge.</span>
   </footer>
 </body>
 </html>

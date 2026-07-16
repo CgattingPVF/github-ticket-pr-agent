@@ -1,10 +1,27 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Callable
 
 from core import IssueRef, WorkflowError, dump_json, run_command
+
+
+TEST_DIRECTORIES = {"test", "tests", "spec", "specs", "__tests__"}
+
+
+def is_test_file(path: str) -> bool:
+    """Return whether a repository-relative path conventionally contains tests."""
+    parts = Path(path).parts
+    if any(part.lower() in TEST_DIRECTORIES for part in parts[:-1]):
+        return True
+    filename = parts[-1] if parts else path
+    stem = Path(filename).stem
+    return bool(
+        re.search(r"(^test[_.-]|[_.-](?:test|tests|spec|specs)(?:\.|$))", filename, re.IGNORECASE)
+        or re.search(r"(?:Test|Tests|Spec|Specs)$", stem)
+    )
 
 
 class GitHubOps:
@@ -117,6 +134,23 @@ class GitHubOps:
         )
         self.ensure_commit_identity(repo_dir)
         run_command(["git", "add", "-A"], cwd=repo_dir, timeout=self.timeout, log=self.log)
+        staged = run_command(
+            ["git", "diff", "--cached", "--name-only", "-z"],
+            cwd=repo_dir, timeout=self.timeout, log=self.log,
+        ).stdout.split("\0")
+        test_files = [path for path in staged if path and is_test_file(path)]
+        if test_files:
+            run_command(
+                ["git", "restore", "--staged", "--", *test_files],
+                cwd=repo_dir, timeout=self.timeout, log=self.log,
+            )
+            self.log(f"Excluded {len(test_files)} test file(s) from the pull request.")
+        remaining = run_command(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=repo_dir, timeout=self.timeout, log=self.log, check=False,
+        )
+        if remaining.returncode == 0:
+            raise WorkflowError("No non-test changes remain to include in the pull request.")
         run_command(["git", "commit", "-m", commit_message], cwd=repo_dir, timeout=self.timeout, log=self.log)
         run_command(
             ["git", "push", "--set-upstream", "origin", branch_name],

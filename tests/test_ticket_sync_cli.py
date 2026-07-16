@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -28,6 +29,39 @@ def test_find_gh_executable_uses_existing_candidate(
 def test_sync_rejects_invalid_repository_before_running_gh() -> None:
     with pytest.raises(ValueError, match='owner/repository'):
         ticket_sync.sync_github('https://github.com/example/project')
+
+
+def test_sync_excludes_pull_requests_before_loading_project_metadata(monkeypatch) -> None:
+    issue = {
+        'number': 1105, 'html_url': 'https://github.com/org/repo/issues/1105',
+        'title': 'Backlogged issue', 'state': 'open', 'labels': [], 'assignees': [],
+    }
+    pull_request = {
+        'number': 1106, 'html_url': 'https://github.com/org/repo/pull/1106',
+        'title': 'A pull request', 'state': 'open', 'labels': [], 'assignees': [],
+        'pull_request': {'url': 'https://api.github.com/repos/org/repo/pulls/1106'},
+    }
+    calls = []
+
+    def fake_run(arguments, timeout=60, token=None):
+        calls.append(arguments)
+        if arguments[:2] == ['api', 'graphql']:
+            assert 'i1105: issue(number: 1105)' in arguments[-1]
+            assert '1106' not in arguments[-1]
+            payload = {'data': {'repository': {'i1105': {'projectItems': {'nodes': [
+                {'fieldValues': {'nodes': [
+                    {'name': 'Backlog', 'field': {'name': 'Status'}},
+                ]}},
+            ]}}}}}
+        else:
+            payload = [issue, pull_request]
+        return subprocess.CompletedProcess(arguments, 0, json.dumps(payload), '')
+
+    monkeypatch.setattr(ticket_sync, '_run_gh', fake_run)
+
+    tickets = ticket_sync.sync_github('org/repo')
+
+    assert [(ticket['number'], ticket['project_status']) for ticket in tickets] == [(1105, 'Backlog')]
 
 
 def test_404_error_explains_repository_access() -> None:
