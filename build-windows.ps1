@@ -30,6 +30,7 @@ try {
 
     & $Python -m PyInstaller --noconfirm --clean --onefile --windowed `
         --name ticket-pr-agent `
+        --additional-hooks-dir "pyinstaller-hooks" `
         --add-data "templates;templates" `
         --add-data "static;static" `
         launcher.py

@@ -10,6 +10,7 @@ on:
       - 'requirements.txt'
       - 'requirements-build.txt'
       - 'build-windows.ps1'
+      - 'pyinstaller-hooks/**'
       - 'templates/**'
       - 'static/**'
       - 'tests/**'
@@ -104,9 +105,43 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
             --name ticket-pr-agent `
+            --additional-hooks-dir "pyinstaller-hooks" `
             --add-data "templates;templates" `
             --add-data "static;static" `
             launcher.py
+
+      - name: Smoke test executable
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath ".\dist\ticket-pr-agent.exe" -PassThru
+          try {
+            $responded = $false
+            for ($attempt = 1; $attempt -le 30; $attempt++) {
+              if ($process.HasExited) {
+                throw "Executable exited before the web server became ready (exit code $($process.ExitCode))."
+              }
+
+              try {
+                $response = Invoke-WebRequest -Uri "http://127.0.0.1:3060/" -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200) {
+                  $responded = $true
+                  break
+                }
+              }
+              catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+
+            if (-not $responded) {
+              throw "Executable did not serve http://127.0.0.1:3060/ within 30 seconds."
+            }
+          }
+          finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
