@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Connect GitHub · Neon Ops{% endblock %}
+{% block content %}
+<section class="lab-head">
+  <div>
+    <p class="eyebrow">NEURAL HANDSHAKE // GITHUB</p>
+    <h1>Jack into GitHub</h1>
+    <p>This page stays open while GitHub CLI securely connects your account.</p>
+  </div>
+</section>
+
+<section class="gh-box auth-connect-card">
+  <header class="gh-box-header"><strong>GitHub device authorization</strong><span class="live-dot" id="auth-state">STARTING</span></header>
+  <div class="form-body">
+    <ol class="auth-steps">
+      <li>A GitHub authorization tab will open automatically.</li>
+      <li>Copy the one-time device code shown below and paste it when GitHub asks.</li>
+      <li>Approve GitHub CLI, then return here. This page will continue automatically.</li>
+    </ol>
+    <div id="auth-message" class="flash">Opening GitHub authorization…</div>
+    <pre id="auth-output" class="logs" hidden></pre>
+    <div class="lab-actions">
+      <button id="retry-auth" class="btn btn-primary" type="button" onclick="startAuthentication()" hidden>Try GitHub sign-in again</button>
+      <a class="btn" href="{{ url_for('prompts_page') }}">Cancel</a>
+    </div>
+  </div>
+</section>
+
+<script>
+let pollTimer;
+
+function renderStatus(data) {
+  const state = document.getElementById('auth-state');
+  const message = document.getElementById('auth-message');
+  const output = document.getElementById('auth-output');
+  const retry = document.getElementById('retry-auth');
+  state.textContent = (data.status || 'waiting').toUpperCase();
+  message.textContent = data.message || 'Waiting for GitHub authorization…';
+  const lines = Array.isArray(data.output) ? data.output : [];
+  output.hidden = lines.length === 0;
+  output.textContent = lines.join('\n');
+  retry.hidden = data.status !== 'failed';
+  if (data.status === 'connected') {
+    clearInterval(pollTimer);
+    message.textContent = `Connected as @${data.login}. Loading GitHub tickets…`;
+    window.location.replace(data.redirect || '/prompts');
+  }
+}
+
+async function pollAuthentication() {
+  try {
+    const response = await fetch('/auth/cli/status', {cache: 'no-store'});
+    renderStatus(await response.json());
+  } catch (error) {
+    renderStatus({status: 'failed', message: `Could not check sign-in: ${error.message}`});
+  }
+}
+
+async function startAuthentication() {
+  document.getElementById('retry-auth').hidden = true;
+  try {
+    const response = await fetch('/auth/cli/start', {method: 'POST'});
+    renderStatus(await response.json());
+    clearInterval(pollTimer);
+    pollTimer = setInterval(pollAuthentication, 1000);
+  } catch (error) {
+    renderStatus({status: 'failed', message: `Could not start sign-in: ${error.message}`});
+  }
+}
+
+startAuthentication();
+</script>
+{% endblock %}

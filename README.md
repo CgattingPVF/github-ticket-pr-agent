@@ -101,7 +101,9 @@ The executable bundles the official GitHub CLI (`gh`) used to read and update
 GitHub issues. The build downloads the latest Windows CLI archive and verifies
 it against GitHub's published SHA-256 checksum before packaging it. GitHub
 authentication is still user-specific: authenticate an installed GitHub CLI
-once with `gh auth login`, or provide `GH_TOKEN` when starting the application.
+once with `gh auth login`, provide `GH_TOKEN` when starting the application, or
+use **Jack in // GitHub** in the app. The packaged app keeps a sign-in status
+page open while GitHub CLI launches its browser/device authorization flow.
 
 The application loads `.env` automatically from the project directory and also respects environment variables supplied by your shell, process manager, or container.
 

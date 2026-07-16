@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 from authlib.integrations.flask_client import OAuth
@@ -225,6 +226,125 @@ github = oauth.register(
     client_kwargs={'scope': 'repo public_repo'},
 )
 
+_cli_auth_lock = threading.Lock()
+_cli_auth_state: dict[str, object] = {
+    'status': 'idle',
+    'message': 'Ready to connect to GitHub.',
+    'output': [],
+    'started_at': None,
+}
+
+
+def _subprocess_window_flags() -> int:
+    return getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0
+
+
+def _github_cli_identity() -> dict | None:
+    """Return the active GitHub CLI identity without exposing its token."""
+    try:
+        gh = find_gh_executable()
+        token_result = subprocess.run(
+            [gh, 'auth', 'token', '--hostname', 'github.com'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=_subprocess_window_flags(),
+        )
+        token = token_result.stdout.strip()
+        if token_result.returncode != 0 or not token:
+            return None
+        profile = subprocess.run(
+            [gh, 'api', 'user'],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, 'GH_TOKEN': token},
+            creationflags=_subprocess_window_flags(),
+        )
+        if profile.returncode != 0:
+            return None
+        return json.loads(profile.stdout)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return None
+
+
+def _connect_github_cli_session() -> dict | None:
+    user = _github_cli_identity()
+    if not user or not user.get('login'):
+        return None
+    session['github_login'] = user['login']
+    store.upsert_player(
+        user['login'],
+        user.get('name') or user['login'],
+        user.get('avatar_url', ''),
+    )
+    return user
+
+
+def _run_cli_authentication() -> None:
+    try:
+        gh = find_gh_executable()
+        env = os.environ.copy()
+        # Force an interactive persisted login instead of reusing an invalid
+        # automation token inherited from the process environment.
+        env.pop('GH_TOKEN', None)
+        env.pop('GITHUB_TOKEN', None)
+        process = subprocess.Popen(
+            [
+                gh, 'auth', 'login',
+                '--hostname', 'github.com',
+                '--git-protocol', 'https',
+                '--web',
+                '--scopes', 'repo,read:org,project',
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env,
+            creationflags=_subprocess_window_flags(),
+        )
+        with _cli_auth_lock:
+            _cli_auth_state['status'] = 'waiting'
+            _cli_auth_state['message'] = 'Complete authorization in the GitHub browser tab.'
+
+        output: list[str] = []
+        if process.stdout:
+            for line in process.stdout:
+                clean_line = line.strip()
+                if clean_line:
+                    output.append(clean_line)
+                    with _cli_auth_lock:
+                        _cli_auth_state['output'] = output[-12:]
+
+        return_code = process.wait()
+        with _cli_auth_lock:
+            if return_code == 0:
+                _cli_auth_state['status'] = 'complete'
+                _cli_auth_state['message'] = 'GitHub authorization completed.'
+            else:
+                _cli_auth_state['status'] = 'failed'
+                _cli_auth_state['message'] = output[-1] if output else 'GitHub CLI sign-in failed.'
+    except Exception as exc:
+        with _cli_auth_lock:
+            _cli_auth_state['status'] = 'failed'
+            _cli_auth_state['message'] = f'Unable to start GitHub sign-in: {exc}'
+
+
+def _start_cli_authentication() -> dict[str, object]:
+    with _cli_auth_lock:
+        if _cli_auth_state['status'] in {'starting', 'waiting'}:
+            return dict(_cli_auth_state)
+        _cli_auth_state.update({
+            'status': 'starting',
+            'message': 'Opening GitHub authorization…',
+            'output': [],
+            'started_at': time.time(),
+        })
+    threading.Thread(target=_run_cli_authentication, daemon=True).start()
+    with _cli_auth_lock:
+        return dict(_cli_auth_state)
+
 
 @app.get('/login')
 def login():
@@ -232,23 +352,32 @@ def login():
     # Local development commonly has GitHub CLI authentication but no OAuth app.
     # Reuse that identity instead of sending a placeholder client id to GitHub.
     if not client_id or client_id in {'your-client-id-here', 'change-me'}:
-        try:
-            token = subprocess.run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=5)
-            if token.returncode == 0 and token.stdout.strip():
-                access_token = token.stdout.strip()
-                profile = subprocess.run(['gh', 'api', 'user'], capture_output=True, text=True, timeout=10, env={**os.environ, 'GH_TOKEN': access_token})
-                if profile.returncode == 0:
-                    user = json.loads(profile.stdout)
-                    session['github_token'] = access_token
-                    session['github_login'] = user.get('login')
-                    store.upsert_player(user.get('login', ''), user.get('name') or user.get('login', ''), user.get('avatar_url', ''))
-                    return redirect(url_for('leaderboard_page'))
-        except Exception:
-            pass
-        return redirect(url_for('prompts_page'))
+        if _connect_github_cli_session():
+            return redirect(url_for('prompts_page'))
+        return render_template('github_login.html')
     if client_id:
         return github.authorize_redirect(url_for('auth_callback', _external=True))
     return redirect(url_for('prompts_page'))
+
+
+@app.post('/auth/cli/start')
+def start_cli_auth():
+    if _connect_github_cli_session():
+        return jsonify({'status': 'connected', 'redirect': url_for('prompts_page')})
+    return jsonify(_start_cli_authentication())
+
+
+@app.get('/auth/cli/status')
+def cli_auth_status():
+    user = _connect_github_cli_session()
+    if user:
+        return jsonify({
+            'status': 'connected',
+            'login': user['login'],
+            'redirect': url_for('prompts_page'),
+        })
+    with _cli_auth_lock:
+        return jsonify(dict(_cli_auth_state))
 
 
 @app.get('/auth/callback')
@@ -276,6 +405,8 @@ def logout():
 
 @app.get('/api/user')
 def api_user():
+    if session.get('github_login'):
+        return jsonify({'login': session['github_login']})
     token = get_github_token()
     if not token:
         return jsonify({'login': None}), 401

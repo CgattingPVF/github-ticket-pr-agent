@@ -135,6 +135,10 @@ jobs:
                   if (-not $syncStatus.available -or -not $syncStatus.bundled) {
                     throw "Packaged application could not discover its bundled GitHub CLI."
                   }
+                  $loginResponse = Invoke-WebRequest -Uri "http://127.0.0.1:3060/login" -UseBasicParsing -TimeoutSec 2
+                  if ($loginResponse.StatusCode -ne 200 -or $loginResponse.Content -notmatch "GitHub device authorization") {
+                    throw "Packaged application did not serve the persistent GitHub sign-in flow."
+                  }
                   $responded = $true
                   break
                 }
