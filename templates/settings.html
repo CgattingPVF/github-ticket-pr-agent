@@ -1,34 +1,91 @@
 {% extends "base.html" %}
-{% block title %}System configuration · Neon Ops{% endblock %}
+{% block title %}{{ theme_settings.title }}{% endblock %}
 {% block content %}
-<section class="page-heading">
-  <p class="eyebrow">RIPPERDOC // CONTROL ROOM</p>
-  <h1>System configuration</h1>
-  <p class="hero-copy">Tune runner cyberware, neural thresholds, and local network parameters. Credentials remain air-gapped from this display.</p>
+<section class="page-heading settings-heading">
+  <p class="eyebrow">{{ theme_settings.eyebrow }}</p>
+  <h1>{{ theme_settings.title }}</h1>
+  <p class="hero-copy">{{ theme_settings.intro }}</p>
 </section>
 
-<div class="two-col">
+<section class="gh-box theme-settings" aria-labelledby="theme-settings-title">
+  <header class="gh-box-header">
+    <strong id="theme-settings-title">Interface theme</strong>
+    <span class="board-hint">PERSISTS IN THIS BROWSER</span>
+  </header>
+  <form class="theme-form" method="post" action="{{ url_for('update_theme') }}">
+    <fieldset>
+      <legend>Choose your command interface</legend>
+      <div class="theme-grid">
+        {% for theme in ui_theme_options %}
+        <label class="theme-option theme-option-{{ theme.id }}">
+          <input type="radio" name="theme" value="{{ theme.id }}" {% if theme.id == ui_theme %}checked{% endif %}>
+          <span class="theme-card-body">
+            <span class="theme-preview theme-preview-{{ theme.id }}" aria-hidden="true">
+              <i class="theme-preview-rail"></i>
+              <i class="theme-preview-panel"></i>
+              <i class="theme-preview-panel"></i>
+              <b>MQ</b>
+              <small>{{ theme.preview_label }}</small>
+            </span>
+            <span class="theme-option-copy">
+              <span><strong>{{ theme.label }}</strong>{% if theme.id == ui_theme %}<em>ACTIVE</em>{% endif %}</span>
+              <small>{{ theme.short_name }}</small>
+              <p>{{ theme.description }}</p>
+            </span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <div class="theme-actions">
+      <p class="theme-confirmation{{ ' theme-error' if theme_error else '' }}" role="status">
+        {% if request.args.get('saved') == ui_theme %}Theme applied across every command screen.{% elif theme_error %}{{ theme_error }}{% else %}The selection takes effect after you apply it.{% endif %}
+      </p>
+      <button class="btn btn-primary" type="submit">{{ theme_settings.apply }}</button>
+    </div>
+  </form>
+</section>
+
+<section class="gh-box" aria-labelledby="queue-maintenance-title">
+  <header class="gh-box-header"><strong id="queue-maintenance-title">Queue maintenance</strong><span class="board-hint">IRREVERSIBLE</span></header>
+  <p class="muted">Remove every queued, active, and archived job, including its stored telemetry. Use this when stale active jobs remain after a restart.</p>
+  <form method="post" action="{{ url_for('clear_queue') }}" onsubmit="return confirm('Clear the entire job queue and all stored job telemetry? This cannot be undone.');">
+    <button class="btn btn-danger" type="submit">Clear entire queue</button>
+  </form>
+  {% if request.args.get('queue_cleared') is not none %}<p class="theme-confirmation" role="status">Cleared {{ request.args.get('queue_cleared') }} stored job{{ '' if request.args.get('queue_cleared') == '1' else 's' }}.</p>{% endif %}
+</section>
+
+<section class="gh-box" aria-labelledby="notification-title">
+  <header class="gh-box-header"><strong id="notification-title">Desktop notifications</strong><span class="board-hint">WINDOWS ONLY</span></header>
+  <p class="muted">Test the local notification shown when a pull request is created. Clicking it opens GitHub issue #898.</p>
+  <form method="post" action="{{ url_for('demo_notification') }}">
+    <button class="btn btn-secondary" type="submit">Show ticket notification</button>
+  </form>
+  {% if request.args.get('notification') == 'sent' %}<p class="theme-confirmation" role="status">Demo notification sent.</p>{% elif request.args.get('notification') == 'unavailable' %}<p class="theme-confirmation" role="status">Windows notifications are unavailable on this host.</p>{% elif request.args.get('notification') == 'failed' %}<p class="theme-confirmation theme-error" role="status">The Windows notification could not be shown.</p>{% endif %}
+</section>
+
+<div class="two-col settings-runtime-grid">
   <section class="gh-box">
-    <header class="gh-box-header"><strong>Runner matrix</strong></header>
+    <header class="gh-box-header"><strong>{{ theme_settings.agents }}</strong></header>
     <dl class="settings-list">
-      <dt>Primary runner</dt><dd><code>{{ settings.agent_command }}</code></dd>
-      <dt>Counter-intel runner</dt><dd><code>{{ settings.review_command }}</code></dd>
-      <dt>Claude daemon</dt><dd><code>{{ settings.claude_command }}</code></dd>
-      <dt>Neural confidence gate</dt><dd>{{ (settings.minimum_confidence * 100)|round|int }}%</dd>
-      <dt>Recovery cycles</dt><dd>{{ settings.max_repair_cycles }}</dd>
+      <dt>{{ theme_settings.primary }}</dt><dd><code>{{ settings.agent_command }}</code></dd>
+      <dt>{{ theme_settings.reviewer }}</dt><dd><code>{{ settings.review_command }}</code></dd>
+      <dt>{{ theme_settings.claude }}</dt><dd><code>{{ settings.claude_command }}</code></dd>
+      <dt>{{ theme_settings.confidence }}</dt><dd>{{ (settings.minimum_confidence * 100)|round|int }}%</dd>
+      <dt>{{ theme_settings.recovery }}</dt><dd>{{ settings.max_repair_cycles }}</dd>
     </dl>
-    <p class="muted">Cyberware defaults are loaded from <code>.env</code>. Individual operations can install temporary loadouts.</p>
+    <p class="muted">{{ theme_settings.defaults_before }} <code>.env</code>. {{ theme_settings.defaults_after }}</p>
   </section>
   <section class="gh-box">
-    <header class="gh-box-header"><strong>Runtime telemetry</strong></header>
+    <header class="gh-box-header"><strong>{{ theme_settings.telemetry }}</strong></header>
     <dl class="settings-list">
-      <dt>Network root</dt><dd><code>{{ settings.workspace_root }}</code></dd>
-      <dt>Shard storage</dt><dd><code>{{ settings.data_dir }}</code></dd>
-      <dt>Quickhack timeout</dt><dd>{{ settings.command_timeout_seconds }} seconds</dd>
-      <dt>Black ICE timeout</dt><dd>{{ settings.review_timeout_seconds }} seconds</dd>
-      <dt>Local mirror</dt><dd><code>{{ settings.local_repo_path or 'Mirrored per operation' }}</code></dd>
+      <dt>{{ theme_settings.root }}</dt><dd><code>{{ settings.workspace_root }}</code></dd>
+      <dt>{{ theme_settings.storage }}</dt><dd><code>{{ settings.data_dir }}</code></dd>
+      <dt>{{ theme_settings.command_timeout }}</dt><dd>{{ settings.command_timeout_seconds }} seconds</dd>
+      <dt>{{ theme_settings.review_timeout }}</dt><dd>{{ 'Unlimited' if settings.review_timeout_seconds <= 0 else settings.review_timeout_seconds ~ ' seconds' }}</dd>
+      <dt>{{ theme_settings.local }}</dt><dd><code>{{ settings.local_repo_path or theme_settings.local_fallback }}</code></dd>
     </dl>
-    <p class="muted">GitHub neural authentication routes through the CLI. Run <code>gh auth status</code> to scan the handshake.</p>
+    <p class="muted">GitHub {{ theme_settings.auth_before }} <code>gh auth status</code> {{ theme_settings.auth_after }}</p>
   </section>
 </div>
 {% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Codex Update{% endblock %}
+{% block content %}
+<section class="gh-box update-screen" data-next-url="{{ next_url }}">
+  <div class="empty-state">
+    <span aria-hidden="true">MQ</span>
+    <strong>Checking Codex CLI</strong>
+    <small id="codex-update-message">{{ update.message }}</small>
+    <div class="xp-bar" aria-hidden="true"><span id="codex-update-progress" style="width: 35%"></span></div>
+    <small id="codex-update-version">
+      {% if update.before_version %}Installed: {{ update.before_version }}{% else %}Preparing update check...{% endif %}
+    </small>
+  </div>
+</section>
+
+<script>
+(() => {
+  const screen = document.querySelector('.update-screen');
+  const nextUrl = screen?.dataset.nextUrl || {{ url_for('index')|tojson }};
+  const message = document.getElementById('codex-update-message');
+  const version = document.getElementById('codex-update-version');
+  const progress = document.getElementById('codex-update-progress');
+  let ticks = 0;
+
+  async function poll() {
+    ticks += 1;
+    if (progress) progress.style.width = `${Math.min(92, 35 + ticks * 7)}%`;
+    try {
+      const response = await fetch({{ url_for('api_codex_update')|tojson }}, {cache: 'no-store'});
+      const state = await response.json();
+      if (message) message.textContent = state.message || 'Checking Codex CLI...';
+      if (version) {
+        const before = state.before_version ? `Installed: ${state.before_version}` : '';
+        const after = state.after_version && state.after_version !== state.before_version ? `Current: ${state.after_version}` : '';
+        version.textContent = [before, after].filter(Boolean).join(' · ') || 'Preparing update check...';
+      }
+      if (['complete', 'failed', 'skipped'].includes(state.status)) {
+        if (progress) progress.style.width = '100%';
+        setTimeout(() => window.location.replace(nextUrl), 750);
+        return;
+      }
+    } catch (error) {
+      if (message) message.textContent = 'Update status check failed; opening the app...';
+      setTimeout(() => window.location.replace(nextUrl), 750);
+      return;
+    }
+    setTimeout(poll, 1000);
+  }
+
+  setTimeout(poll, 500);
+})();
+</script>
+{% endblock %}

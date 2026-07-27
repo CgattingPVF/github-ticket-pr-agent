@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 from core import IssueRef, WorkflowError, dump_json, run_command
 
@@ -44,7 +45,7 @@ class GitHubOps:
     def check_auth(self) -> None:
         run_command(["gh", "auth", "status"], timeout=self.timeout, log=self.log)
 
-    def get_issue(self, ref: IssueRef) -> dict:
+    def get_issue(self, ref: IssueRef, *, require_open: bool = True) -> dict:
         result = run_command(
             ["gh", "api", f"repos/{ref.full_name}/issues/{ref.number}"],
             timeout=self.timeout,
@@ -53,9 +54,201 @@ class GitHubOps:
         issue = json.loads(result.stdout)
         if "pull_request" in issue:
             raise WorkflowError("The supplied URL is a pull request, not an issue ticket.")
-        if issue.get("state") != "open":
+        if require_open and issue.get("state") != "open":
             raise WorkflowError("The supplied GitHub ticket is not open.")
         return issue
+
+    def get_issue_with_compact_context(self, ref: IssueRef) -> dict:
+        """Read the ticket and its bounded delivery context in one GitHub call.
+
+        Full Delivery used to launch three ``gh`` processes here: the REST issue,
+        comments, and a linked-PR GraphQL query. A single bounded GraphQL query is
+        both faster and materially smaller than carrying those responses through
+        separate agent prompts.
+        """
+        query = f'''query {{
+          repository(owner: "{ref.owner}", name: "{ref.repo}") {{
+            defaultBranchRef {{ name }}
+            issue(number: {ref.number}) {{
+              number title body state url updatedAt
+              labels(first: 20) {{ nodes {{ name }} }}
+              comments(last: 5) {{ nodes {{
+                author {{ login }} createdAt body
+              }} }}
+              closedByPullRequestsReferences(first: 5) {{ nodes {{
+                number title url state changedFiles
+                baseRefName headRefName
+                repository {{ nameWithOwner }}
+                commits(last: 1) {{ nodes {{
+                  commit {{
+                    statusCheckRollup {{
+                      contexts(first: 8) {{ nodes {{
+                        ... on CheckRun {{ name conclusion status }}
+                        ... on StatusContext {{ context state }}
+                      }} }}
+                    }}
+                  }}
+                }} }}
+              }} }}
+            }}
+          }}
+        }}'''
+        result = run_command(
+            ["gh", "api", "graphql", "-f", f"query={query}"],
+            timeout=self.timeout,
+            log=self.log,
+        )
+        try:
+            repository = json.loads(result.stdout)["data"]["repository"]
+            node = repository["issue"]
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise WorkflowError("GitHub did not return the requested issue ticket.") from exc
+        if not node:
+            raise WorkflowError("The supplied GitHub ticket was not found.")
+        if str(node.get("state", "")).lower() != "open":
+            raise WorkflowError("The supplied GitHub ticket is not open.")
+
+        context = {
+            "latest_comments": [
+                {
+                    "author": (comment.get("author") or {}).get("login"),
+                    "created_at": comment.get("createdAt"),
+                    "body": comment.get("body") or "",
+                }
+                for comment in ((node.get("comments") or {}).get("nodes") or [])
+                if isinstance(comment, dict)
+            ],
+            "linked_pull_requests": self._format_linked_pull_request_nodes(
+                (node.get("closedByPullRequestsReferences") or {}).get("nodes") or []
+            ),
+            "context_warnings": [],
+        }
+        return {
+            "html_url": node.get("url"),
+            "number": node.get("number"),
+            "title": node.get("title"),
+            "body": node.get("body") or "",
+            "state": str(node.get("state", "")).lower(),
+            "updated_at": node.get("updatedAt"),
+            "labels": [
+                {"name": label.get("name")}
+                for label in ((node.get("labels") or {}).get("nodes") or [])
+                if isinstance(label, dict)
+            ],
+            "repository_default_branch": (repository.get("defaultBranchRef") or {}).get("name"),
+            "mergequest_github_context": context,
+        }
+
+    def get_compact_issue_context(self, ref: IssueRef) -> dict:
+        """Fetch bounded GitHub context directly through gh, without MCP."""
+        context: dict[str, object] = {
+            "latest_comments": [],
+            "linked_pull_requests": [],
+            "context_warnings": [],
+        }
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {
+                "latest_comments": executor.submit(self._latest_issue_comments, ref),
+                "linked_pull_requests": executor.submit(self._linked_pull_request_context, ref),
+            }
+            for key, future in futures.items():
+                try:
+                    context[key] = future.result()
+                except Exception as exc:
+                    label = "issue comments" if key == "latest_comments" else "linked pull requests"
+                    context["context_warnings"].append(f"Could not read {label}: {exc}")
+        return context
+
+    def _latest_issue_comments(self, ref: IssueRef) -> list[dict]:
+        result = run_command(
+            ["gh", "api", f"repos/{ref.full_name}/issues/{ref.number}/comments?per_page=100"],
+            timeout=self.timeout,
+            log=self.log,
+        )
+        comments = json.loads(result.stdout)
+        if not isinstance(comments, list):
+            return []
+        latest = comments[-5:]
+        return [
+            {
+                "author": (comment.get("user") or {}).get("login"),
+                "created_at": comment.get("created_at"),
+                "body": comment.get("body") or "",
+            }
+            for comment in latest
+            if isinstance(comment, dict)
+        ]
+
+    def _linked_pull_request_context(self, ref: IssueRef) -> list[dict]:
+        query = f'''query {{
+          repository(owner: "{ref.owner}", name: "{ref.repo}") {{
+            issue(number: {ref.number}) {{
+              closedByPullRequestsReferences(first: 5) {{ nodes {{
+                number title url state changedFiles
+                baseRefName headRefName
+                repository {{ nameWithOwner }}
+                commits(last: 1) {{ nodes {{
+                  commit {{
+                    statusCheckRollup {{
+                      contexts(first: 8) {{ nodes {{
+                        ... on CheckRun {{ name conclusion status }}
+                        ... on StatusContext {{ context state }}
+                      }} }}
+                    }}
+                  }}
+                }} }}
+              }} }}
+            }}
+          }}
+        }}'''
+        result = run_command(
+            ["gh", "api", "graphql", "-f", f"query={query}"],
+            timeout=self.timeout,
+            log=self.log,
+        )
+        nodes = (
+            json.loads(result.stdout)
+            .get("data", {})
+            .get("repository", {})
+            .get("issue", {})
+            .get("closedByPullRequestsReferences", {})
+            .get("nodes", [])
+        )
+        return self._format_linked_pull_request_nodes(nodes)
+
+    @staticmethod
+    def _format_linked_pull_request_nodes(nodes: list[dict]) -> list[dict]:
+        items: list[dict] = []
+        for node in nodes or []:
+            if not isinstance(node, dict):
+                continue
+            check_nodes = (
+                ((node.get("commits") or {}).get("nodes") or [{}])[-1]
+                .get("commit", {})
+                .get("statusCheckRollup", {})
+                .get("contexts", {})
+                .get("nodes", [])
+            )
+            checks = []
+            for check in check_nodes or []:
+                if not isinstance(check, dict):
+                    continue
+                checks.append({
+                    "name": check.get("name") or check.get("context"),
+                    "status": check.get("conclusion") or check.get("state") or check.get("status"),
+                })
+            items.append({
+                "repository": (node.get("repository") or {}).get("nameWithOwner"),
+                "number": node.get("number"),
+                "title": node.get("title"),
+                "state": node.get("state"),
+                "url": node.get("url"),
+                "base": node.get("baseRefName"),
+                "head": node.get("headRefName"),
+                "changed_files": node.get("changedFiles"),
+                "checks": checks,
+            })
+        return items
 
     def get_repository(self, ref: IssueRef) -> dict:
         result = run_command(
@@ -65,8 +258,8 @@ class GitHubOps:
         )
         return json.loads(result.stdout)
 
-    def set_issue_project_fields(self, ref: IssueRef, selections: dict[str, str]) -> dict[str, int]:
-        """Set named GitHub Projects v2 single-select fields on an issue."""
+    def set_issue_project_fields(self, ref: IssueRef, selections: dict[str, str | None]) -> dict[str, int]:
+        """Set or clear named GitHub Projects v2 single-select fields on an issue."""
         query = f'''query {{
           repository(owner: "{ref.owner}", name: "{ref.repo}") {{
             issue(number: {ref.number}) {{
@@ -91,9 +284,12 @@ class GitHubOps:
         except (KeyError, TypeError, json.JSONDecodeError) as exc:
             raise WorkflowError("GitHub did not return project metadata for the ticket.") from exc
 
-        wanted = {name.strip().lower(): value.strip() for name, value in selections.items()}
+        wanted = {
+            name.strip().lower(): value.strip() if value is not None else None
+            for name, value in selections.items()
+        }
         counts = {name: 0 for name in selections}
-        updates: list[tuple[str, str, str, str, str]] = []
+        updates: list[tuple[str, str, str, str | None, str]] = []
         for item in nodes or []:
             project = item.get("project") or {}
             for field in (project.get("fields") or {}).get("nodes", []):
@@ -103,7 +299,12 @@ class GitHubOps:
                 requested_key = "status" if lookup == "project status" and "status" in wanted else lookup
                 if requested_key not in wanted:
                     continue
-                desired = wanted[requested_key].lower()
+                display_key = next(key for key in selections if key.strip().lower() == requested_key)
+                requested_value = wanted[requested_key]
+                if requested_value is None:
+                    updates.append((project["id"], item["id"], field["id"], None, display_key))
+                    continue
+                desired = requested_value.lower()
                 accepted = {desired}
                 if desired == "pass":
                     accepted.add("passed")
@@ -114,26 +315,69 @@ class GitHubOps:
                     None,
                 )
                 if option:
-                    display_key = next(key for key in selections if key.strip().lower() == requested_key)
                     updates.append((project["id"], item["id"], field["id"], option["id"], display_key))
 
-        for project_id, item_id, field_id, option_id, display_key in updates:
-            mutation = f'''mutation {{
-              updateProjectV2ItemFieldValue(input: {{
-                projectId: "{project_id}", itemId: "{item_id}", fieldId: "{field_id}",
-                value: {{ singleSelectOptionId: "{option_id}" }}
-              }}) {{ projectV2Item {{ id }} }}
-            }}'''
+        mutations: list[str] = []
+        for index, (project_id, item_id, field_id, option_id, display_key) in enumerate(updates):
+            if option_id is None:
+                mutation = f'''field{index}: clearProjectV2ItemFieldValue(input: {{
+                    projectId: "{project_id}", itemId: "{item_id}", fieldId: "{field_id}"
+                  }}) {{ projectV2Item {{ id }} }}'''
+            else:
+                mutation = f'''field{index}: updateProjectV2ItemFieldValue(input: {{
+                    projectId: "{project_id}", itemId: "{item_id}", fieldId: "{field_id}",
+                    value: {{ singleSelectOptionId: "{option_id}" }}
+                  }}) {{ projectV2Item {{ id }} }}'''
+            mutations.append(mutation)
+            counts[display_key] += 1
+        if mutations:
+            mutation = "mutation {\n" + "\n".join(mutations) + "\n}"
             run_command(
                 ["gh", "api", "graphql", "-f", f"query={mutation}"],
                 timeout=self.timeout, log=self.log,
             )
-            counts[display_key] += 1
         return counts
 
     def mark_issue_qa_done(self, ref: IssueRef) -> dict[str, int]:
         """Mark a successful QA ticket Done with a passing Test State."""
         return self.set_issue_project_fields(ref, {"Status": "Done", "Test State": "Pass"})
+
+    def mark_issue_pr_ready(self, ref: IssueRef) -> dict[str, int]:
+        """Move a ticket with an open PR to PR Ready and clear its Test State."""
+        return self.set_issue_project_fields(ref, {"Status": "PR Ready", "Test State": None})
+
+    def has_linked_open_pr(self, ref: IssueRef, repositories: Iterable[str] | None = None) -> bool:
+        """Return whether any named repository has an open PR linked to the ticket."""
+        repository_names = list(dict.fromkeys(repositories or [ref.repo]))
+        with ThreadPoolExecutor(max_workers=min(3, len(repository_names))) as executor:
+            futures = [
+                executor.submit(
+                    self._linked_open_prs,
+                    IssueRef(owner=ref.owner, repo=repository, number=ref.number),
+                    ref,
+                )
+                for repository in repository_names
+            ]
+            return any(future.result() for future in futures)
+
+    def sync_successful_qa_project_fields(
+        self, ref: IssueRef, repositories: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        """Apply the successful-QA project transition for the ticket's live PR state."""
+        has_open_pr = self.has_linked_open_pr(ref, repositories)
+        status = "PR Ready" if has_open_pr else "Done"
+        test_state = None if has_open_pr else "Pass"
+        counts = self.mark_issue_pr_ready(ref) if has_open_pr else self.mark_issue_qa_done(ref)
+        status_count = counts.get("Status", 0)
+        test_state_count = counts.get("Test State", 0)
+        return {
+            "updated": bool(status_count and test_state_count),
+            "count": status_count,
+            "test_state_count": test_state_count,
+            "status": status,
+            "test_state": test_state,
+            "has_open_pr": has_open_pr,
+        }
 
     def set_issue_project_status(self, ref: IssueRef, status_name: str = "Done") -> int:
         """Backward-compatible helper for updating only the project Status."""
@@ -146,45 +390,111 @@ class GitHubOps:
             log=self.log,
         )
 
-    def prepare_branch(self, repo_dir: Path, base_branch: str, branch_name: str) -> None:
-        existing = run_command(
-            ["git", "ls-remote", "--exit-code", "--heads", "origin", branch_name],
-            cwd=repo_dir, timeout=self.timeout, log=self.log, check=False
-        )
+    def prepare_branch(
+        self, repo_dir: Path, base_branch: str, branch_name: str, *, clean_checked: bool = False,
+    ) -> None:
+        if not clean_checked and self.has_changes(repo_dir):
+            raise WorkflowError(
+                f"Repository {repo_dir.name} has uncommitted changes from another operation. "
+                "Finish, stash, or discard that work before starting a new Contract."
+            )
+        # Remote uniqueness and base refresh are independent network operations.
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            existing_future = executor.submit(
+                run_command,
+                ["git", "ls-remote", "--exit-code", "--heads", "origin", branch_name],
+                cwd=repo_dir, timeout=self.timeout, log=self.log, check=False,
+            )
+            fetch_future = executor.submit(
+                run_command,
+                ["git", "fetch", "origin", base_branch],
+                cwd=repo_dir, timeout=self.timeout, log=self.log,
+            )
+            existing = existing_future.result()
+            fetch_future.result()
         if existing.returncode == 0:
-            raise WorkflowError(f"Remote branch already exists: {branch_name}")
-        run_command(["git", "fetch", "origin", base_branch], cwd=repo_dir, timeout=self.timeout, log=self.log)
+            # Reusing the deterministic issue branch makes retries/resumed jobs
+            # idempotent. The clean-worktree check above ensures this cannot
+            # overwrite uncommitted local work.
+            self.log(f"Remote branch already exists; resuming {branch_name}.")
+            run_command(
+                ["git", "fetch", "origin", branch_name],
+                cwd=repo_dir, timeout=self.timeout, log=self.log,
+            )
         run_command(["git", "checkout", "-B", branch_name, "FETCH_HEAD"], cwd=repo_dir, timeout=self.timeout, log=self.log)
         exclude = repo_dir / ".git" / "info" / "exclude"
-        with exclude.open("a", encoding="utf-8") as handle:
-            handle.write("\n.ticket-agent/\n")
+        existing_excludes = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+        if ".ticket-agent/" not in existing_excludes.splitlines():
+            with exclude.open("a", encoding="utf-8") as handle:
+                handle.write("\n.ticket-agent/\n")
+
+    def _linked_open_prs(
+        self, ref: IssueRef, issue_ref: IssueRef | None = None,
+    ) -> list[dict]:
+        """Return all open PRs in ``ref`` which explicitly link ``issue_ref``."""
+        source = issue_ref or ref
+        patterns = [
+            rf"{re.escape(source.full_name)}#{source.number}(?!\d)",
+            rf"github\.com/{re.escape(source.full_name)}/issues/{source.number}(?!\d)",
+        ]
+        if ref.full_name == source.full_name:
+            patterns.append(rf"(?<!\d)#{source.number}(?!\d)")
+
+        def links_ticket(pr: dict) -> bool:
+            body = pr.get("body") or ""
+            return any(re.search(pattern, body, re.IGNORECASE) for pattern in patterns)
+
+        # GitHub's Development panel can attach a PR without adding an issue
+        # reference to the PR body. closedByPullRequestsReferences is the
+        # authoritative graph used by that UI and can span repositories.
+        query = f'''query {{
+          repository(owner: "{source.owner}", name: "{source.repo}") {{
+            issue(number: {source.number}) {{
+              closedByPullRequestsReferences(first: 50) {{ nodes {{
+                number url state headRefName baseRefName body title
+                repository {{ nameWithOwner }}
+              }} }}
+            }}
+          }}
+        }}'''
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            listed_future = executor.submit(
+                run_command,
+                ["gh", "pr", "list", "--repo", ref.full_name, "--state", "open", "--limit", "100",
+                 "--json", "number,url,headRefName,baseRefName,body,title"],
+                timeout=self.timeout, log=self.log,
+            )
+            attached_future = executor.submit(
+                run_command,
+                ["gh", "api", "graphql", "-f", f"query={query}"],
+                timeout=self.timeout, log=self.log, check=False,
+            )
+            result = listed_future.result()
+            attached = attached_future.result()
+        matches = [pr for pr in json.loads(result.stdout) if links_ticket(pr)]
+        if getattr(attached, "returncode", 0) == 0:
+            try:
+                nodes = json.loads(attached.stdout)["data"]["repository"]["issue"]["closedByPullRequestsReferences"]["nodes"]
+                matches.extend(
+                    pr for pr in nodes
+                    if pr.get("state") == "OPEN"
+                    and (pr.get("repository") or {}).get("nameWithOwner") == ref.full_name
+                )
+            except (KeyError, TypeError, json.JSONDecodeError):
+                pass
+
+        unique: dict[str, dict] = {}
+        for pr in matches:
+            unique[str(pr.get("url") or pr.get("number"))] = pr
+        return list(unique.values())
 
     def linked_open_pr(
         self, ref: IssueRef, issue_ref: IssueRef | None = None, *, required: bool = True,
     ) -> dict | None:
-        """Find an open PR in ``ref`` which explicitly links ``issue_ref``."""
+        """Find a single open PR in ``ref`` which explicitly links ``issue_ref``."""
         source = issue_ref or ref
-        result = run_command(
-            ["gh", "pr", "list", "--repo", ref.full_name, "--state", "open", "--limit", "100",
-             "--json", "number,url,headRefName,baseRefName,body,title"],
-            timeout=self.timeout, log=self.log,
-        )
-        markers = [
-            f"{source.owner}/{source.repo}#{source.number}",
-            f"github.com/{source.full_name}/issues/{source.number}",
-        ]
-        if ref.full_name == source.full_name:
-            markers.append(f"#{source.number}")
-        def links_ticket(pr: dict) -> bool:
-            body = (pr.get("body") or "").lower()
-            if any(marker.lower() in body for marker in markers[:2]):
-                return True
-            return bool(
-                ref.full_name == source.full_name
-                and re.search(rf"(?<!\d)#{source.number}(?!\d)", body)
-            )
+        matches = self._linked_open_prs(ref, issue_ref)
 
-        matches = [pr for pr in json.loads(result.stdout) if links_ticket(pr)]
         if not matches:
             if required:
                 raise WorkflowError(f"No open pull request linked to ticket #{source.number} was found in {ref.full_name}.")
@@ -207,12 +517,17 @@ class GitHubOps:
         run_command(["git", "checkout", "-B", base_branch, "FETCH_HEAD"], cwd=repo_dir, timeout=self.timeout, log=self.log)
 
     def ensure_commit_identity(self, repo_dir: Path) -> None:
-        email = run_command(
-            ["git", "config", "user.email"], cwd=repo_dir, timeout=self.timeout, log=self.log, check=False
-        ).stdout.strip()
-        name = run_command(
-            ["git", "config", "user.name"], cwd=repo_dir, timeout=self.timeout, log=self.log, check=False
-        ).stdout.strip()
+        values = run_command(
+            ["git", "config", "--get-regexp", r"^(user\.email|user\.name)$"],
+            cwd=repo_dir, timeout=self.timeout, log=self.log, check=False,
+        ).stdout.splitlines()
+        configured = {
+            key: value for line in values
+            for key, _, value in [line.partition(" ")]
+            if key and value
+        }
+        email = configured.get("user.email", "").strip()
+        name = configured.get("user.name", "").strip()
         if not email:
             run_command(
                 ["git", "config", "user.email", "ticket-agent@localhost"],
@@ -228,11 +543,24 @@ class GitHubOps:
                 log=self.log,
             )
 
+    def discard_changes(self, repo_dir: Path) -> None:
+        """Throw away all uncommitted work, including untracked files."""
+        run_command(["git", "reset", "--hard"], cwd=repo_dir, timeout=self.timeout, log=self.log)
+        run_command(["git", "clean", "-fd"], cwd=repo_dir, timeout=self.timeout, log=self.log)
+
     def has_changes(self, repo_dir: Path) -> bool:
         result = run_command(
             ["git", "status", "--porcelain"], cwd=repo_dir, timeout=self.timeout, log=self.log
         )
         return bool(result.stdout.strip())
+
+    def current_branch(self, repo_dir: Path) -> str:
+        return run_command(
+            ["git", "branch", "--show-current"],
+            cwd=repo_dir,
+            timeout=self.timeout,
+            log=self.log,
+        ).stdout.strip()
 
     def diff(self, repo_dir: Path, base_branch: str) -> str:
         return run_command(
@@ -255,10 +583,19 @@ class GitHubOps:
     def commit_and_push(
         self, repo_dir: Path, branch_name: str, commit_message: str, expected_repository: str
     ) -> None:
-        origin = run_command(
-            ["git", "remote", "get-url", "origin"],
-            cwd=repo_dir, timeout=self.timeout, log=self.log
-        ).stdout.strip()
+        config_lines = run_command(
+            [
+                "git", "config", "--get-regexp",
+                r"^(remote\.origin\.url|user\.email|user\.name)$",
+            ],
+            cwd=repo_dir, timeout=self.timeout, log=self.log, check=False,
+        ).stdout.splitlines()
+        configured = {
+            key: value for line in config_lines
+            for key, _, value in [line.partition(" ")]
+            if key and value
+        }
+        origin = configured.get("remote.origin.url", "").strip()
         accepted = {
             f"https://github.com/{expected_repository}.git",
             f"https://github.com/{expected_repository}",
@@ -268,11 +605,16 @@ class GitHubOps:
             raise WorkflowError(f"Origin remote changed unexpectedly: {origin}")
         safe_hooks = repo_dir.parent / "empty-git-hooks"
         safe_hooks.mkdir(exist_ok=True)
-        run_command(
-            ["git", "config", "core.hooksPath", str(safe_hooks)],
-            cwd=repo_dir, timeout=self.timeout, log=self.log
-        )
-        self.ensure_commit_identity(repo_dir)
+        if not configured.get("user.email"):
+            run_command(
+                ["git", "config", "user.email", "ticket-agent@localhost"],
+                cwd=repo_dir, timeout=self.timeout, log=self.log,
+            )
+        if not configured.get("user.name"):
+            run_command(
+                ["git", "config", "user.name", "Ticket PR Agent"],
+                cwd=repo_dir, timeout=self.timeout, log=self.log,
+            )
         run_command(["git", "add", "-A"], cwd=repo_dir, timeout=self.timeout, log=self.log)
         staged = run_command(
             ["git", "diff", "--cached", "--name-only", "-z"],
@@ -285,18 +627,48 @@ class GitHubOps:
                 cwd=repo_dir, timeout=self.timeout, log=self.log,
             )
             self.log(f"Excluded {len(test_files)} test file(s) from the pull request.")
-        remaining = run_command(
-            ["git", "diff", "--cached", "--quiet"],
-            cwd=repo_dir, timeout=self.timeout, log=self.log, check=False,
-        )
-        if remaining.returncode == 0:
+        if not any(path and path not in test_files for path in staged):
             raise WorkflowError("No non-test changes remain to include in the pull request.")
-        run_command(["git", "commit", "-m", commit_message], cwd=repo_dir, timeout=self.timeout, log=self.log)
         run_command(
+            ["git", "-c", f"core.hooksPath={safe_hooks}", "commit", "-m", commit_message],
+            cwd=repo_dir, timeout=self.timeout, log=self.log,
+        )
+
+        # A prior or partially completed delivery may already have published the
+        # same ticket branch. Preserve that remote work and rebase the new commit
+        # onto it instead of failing with a non-fast-forward error or force-pushing.
+        pushed = run_command(
             ["git", "push", "--set-upstream", "origin", branch_name],
             cwd=repo_dir,
             timeout=self.timeout,
             log=self.log,
+            check=False,
+        )
+        if pushed.returncode == 0:
+            return
+        self.log(
+            f"Initial push of `{branch_name}` was rejected; checking for resumable remote work."
+        )
+        run_command(
+            ["git", "fetch", "origin", branch_name],
+            cwd=repo_dir, timeout=self.timeout, log=self.log,
+        )
+        fast_forward = run_command(
+            ["git", "merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"],
+            cwd=repo_dir, timeout=self.timeout, log=self.log, check=False,
+        )
+        if fast_forward.returncode != 0:
+            self.log(
+                f"Remote ticket branch `{branch_name}` advanced; rebasing the reviewed commit "
+                "before publication."
+            )
+            run_command(
+                ["git", "rebase", "FETCH_HEAD"],
+                cwd=repo_dir, timeout=self.timeout, log=self.log,
+            )
+        run_command(
+            ["git", "push", "--set-upstream", "origin", branch_name],
+            cwd=repo_dir, timeout=self.timeout, log=self.log,
         )
 
     def create_pr(
@@ -359,6 +731,42 @@ class GitHubOps:
                 deletions += int(parts[1])
         return additions, deletions
 
+    def diff_summary(self, repo_dir: Path, base_branch: str) -> tuple[list[str], int, int]:
+        """Return changed paths and line totals from one git process."""
+        result = run_command(
+            ["git", "diff", "--numstat", "-z", f"origin/{base_branch}...HEAD"],
+            cwd=repo_dir,
+            timeout=self.timeout,
+            log=self.log,
+            check=False,
+        )
+        records = result.stdout.split("\0")
+        paths: list[str] = []
+        additions = deletions = 0
+        index = 0
+        while index < len(records):
+            record = records[index]
+            index += 1
+            if not record:
+                continue
+            parts = record.split("\t", 2)
+            if len(parts) != 3:
+                continue
+            added, removed, path = parts
+            if added.isdigit():
+                additions += int(added)
+            if removed.isdigit():
+                deletions += int(removed)
+            if not path and index + 1 < len(records):
+                # With -z, rename/copy records put old and new names in the next
+                # two NUL-delimited fields. The destination is the changed path.
+                index += 1
+                path = records[index]
+                index += 1
+            if path:
+                paths.append(path)
+        return paths, additions, deletions
+
     def comment_on_issue(self, ref: IssueRef, body: str, artifact_dir: Path) -> None:
         body_file = artifact_dir / "issue-comment.md"
         body_file.write_text(body, encoding="utf-8")
@@ -370,13 +778,6 @@ class GitHubOps:
 
     def post_review(self, ref: IssueRef, pr_url: str, review: dict, body: str, artifact_dir: Path) -> None:
         pr_number = int(pr_url.rstrip("/").split("/")[-1])
-        pr = json.loads(
-            run_command(
-                ["gh", "api", f"repos/{ref.full_name}/pulls/{pr_number}"],
-                timeout=self.timeout,
-                log=self.log,
-            ).stdout
-        )
         comments = []
         for finding in review.get("findings") or []:
             path = finding.get("path")
@@ -391,7 +792,6 @@ class GitHubOps:
                     }
                 )
         payload = {
-            "commit_id": pr["head"]["sha"],
             "body": body,
             "event": "COMMENT",
             "comments": comments,

@@ -8,7 +8,7 @@ A local Flask application that accepts a GitHub issue URL and a selected base br
 4. Gives a coding agent a strict investigation-and-fix prompt.
 5. Enforces confidence, unresolved-risk, diff, and validation gates.
 6. Runs a separate automated code-review pass.
-7. Gives the coding agent one configurable repair cycle for blocking findings.
+7. Gives the coding agent up to two configurable repair cycles for blocking findings.
 8. Commits and pushes only after all gates pass.
 9. Creates a pull request, posts a formal review, and comments the PR URL on the original ticket.
 10. Never merges automatically.
@@ -43,9 +43,19 @@ Copy-Item .env.example .env
 
 Open `http://127.0.0.1:3060`.
 
+### Start the WSL checkout from a desktop shortcut
+
+`launch-ticket-pr-agent.bat` is designed to run from Windows and starts the
+repository's `.launch.sh` inside the `Ubuntu` WSL distribution. A copy can be
+placed anywhere, including the Windows desktop; it uses the fixed project path
+`/home/claytongatting/github-ticket-pr-agent` and keeps its window open for
+application logs.
+
 ## Run a ticket from the dashboard
 
 Select a ticket and generate an investigation, review, or all-in-one prompt. The all-in-one prompt runs the complete workflow conversationally and requires an explicit yes/no confirmation before each stage, including edits, validation, GitHub actions, and PR creation.
+
+The **Settings** screen also offers five complete interface themes: Cyberpunk 2077, World War II, Hacker, Skyrim, and Professional Work. The selection is stored as an allow-listed browser cookie and applies to the dashboard, prompt lab, testing workspace, rankings, job telemetry, sync/sign-out cinematics, and settings screens.
 
 Codex is used for ticket execution:
 
@@ -125,7 +135,7 @@ You can replace both commands in the web form or environment variables. Any repl
 - Create `.ticket-agent/result.json` for the coding pass.
 - Create `.ticket-agent/review.json` for the review pass.
 
-## Using Claude Code instead of (or alongside) Codex
+## Using Claude Code or Kilo Code instead of (or alongside) Codex
 
 The agent and review commands are independent, so each can point at a different CLI. To use Claude Code for the coding pass:
 
@@ -133,9 +143,20 @@ The agent and review commands are independent, so each can point at a different 
 AGENT_COMMAND=claude -p --output-format text --dangerously-skip-permissions
 ```
 
-To mix both — e.g. Codex writes the fix, Claude reviews it — set `AGENT_COMMAND` to the Codex command and `REVIEW_COMMAND` to the Claude command (or the reverse), either via `.env` or per-job in the web form. Run `claude login` (or `claude setup-token`) once to authenticate, same as `codex login`.
+Kilo Code can use either free routing or a fixed free model:
 
-The Advanced loadout now exposes Codex, Claude Code, and Custom command independently for coding and review. Claude uses `CLAUDE_COMMAND` and receives the same stdin prompts and `.ticket-agent` JSON contract, so investigation, confidence gates, validation, review, repair cycles, and PR creation are available with Claude as either pass or both passes.
+```text
+KILO_COMMAND=/home/claytongatting/.npm-global/bin/kilo run --auto --pure --format json --model kilo/kilo-auto/free
+KILO_HY3_COMMAND=/home/claytongatting/.npm-global/bin/kilo run --auto --pure --format json --model kilo/tencent/hy3:free
+```
+
+Local Qwen can be used as the first implementation attempt, with automatic escalation to Kilo Hy3 and then Kilo Auto when gates fail:
+
+```text
+QWEN_COMMAND=ollama run qwen3:4b-q4_K_M --think false --hidethinking
+```
+
+To mix providers, choose Codex, local Qwen, Claude Code, Kilo Auto Free, Kilo Hy3 Free, or Custom independently for coding and review in the web form. Run the relevant CLI login once first, such as `codex login`, `claude login`, or `kilo auth login`. MergeQuest supplies Kilo's prompt as the required positional message and uses stdin for compatible providers. Every provider uses the same `.ticket-agent` JSON contract.
 
 ## Validation commands
 

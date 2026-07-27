@@ -1,59 +1,61 @@
 {% extends "base.html" %}
-{% block title %}Prompt forge · Neon Ops{% endblock %}
+{% block title %}{{ theme_dialect.prompt_title }}{% endblock %}
 {% block content %}
 <section class="lab-head">
   <div>
-    <p class="eyebrow">DATA SHARD FABRICATION</p>
-    <h1>Prompt forge</h1>
-    <p>Sync the contract network, lock a target, and forge an investigation, audit, or full-operation protocol.</p>
+    <p class="eyebrow">{{ theme_dialect.prompt_eyebrow }}</p>
+    <h1>{{ theme_dialect.prompt_heading }}</h1>
+    <p>{{ theme_dialect.prompt_intro }}</p>
   </div>
   <div class="lab-auth">
-    <span id="auth-status" hidden><a class="btn" href="/logout">Jack out</a></span>
-    <span id="no-auth-status"><a class="btn btn-primary" href="/login">Jack in // GitHub</a></span>
+    <span id="auth-status" hidden><a class="btn" href="/logout">{{ theme_info.sign_out }}</a></span>
+    <span id="no-auth-status"><a class="btn btn-primary" href="/login">{{ theme_info.sign_in }}</a></span>
   </div>
 </section>
 
 <div class="lab-layout">
   <section class="gh-box">
     <header class="gh-box-header">
-      <strong>Incoming contract feed</strong>
-      <span class="board-hint">SOURCE // GITHUB · THREAT CODE // P0-P2</span>
+      <strong>{{ theme_dialect.prompt_feed }}</strong>
+      <span class="board-hint">SOURCE // GITHUB · {{ 'PRIORITY' if is_wwii else 'THREAT' }} CODE // P0-P2</span>
     </header>
     <div class="form-body">
-      <label>Network district<input type="text" id="repository" value="pvfscaffolding/crm-staff-desktop" placeholder="owner/repository"></label>
+      <label>{{ theme_dialect.prompt_regions }}<input type="text" id="repository" value="pvfscaffolding/crm-staff-desktop, pvfscaffolding/crm-api" placeholder="owner/repository, owner/repository"><small>Both CRM repositories feed the same incoming {{ theme_dialect.mission }} queue.</small></label>
       <div class="lab-sync-row">
         <div id="ticketStatus" class="sync-status"></div>
-        <button class="btn btn-primary" onclick="syncGithub()">Scan GitHub network</button>
+        <button class="btn btn-primary" onclick="syncGithub()">{{ theme_dialect.prompt_sync }}</button>
       </div>
-      <label>Target search<input id="queue-search" type="search" placeholder="Ticket number e.g. 1091" aria-label="Search synced tickets" oninput="filterSyncedTickets(this.value)"></label>
+      <label>{{ theme_dialect.prompt_search }}<input id="queue-search" type="search" placeholder="Ticket number e.g. 1091" aria-label="Search synced tickets" oninput="filterSyncedTickets(this.value)"></label>
       <div class="issue-list" id="ticketQueue"></div>
     </div>
   </section>
 
   <section class="gh-box">
-    <header class="gh-box-header"><strong>Forge data shard</strong><span class="board-hint">lock a contract or paste target coordinates</span></header>
+    <header class="gh-box-header"><strong>{{ theme_dialect.prompt_forge }}</strong><span class="board-hint">Select an item or paste its GitHub coordinates</span></header>
     <div class="form-body">
-      <label>Target coordinates<input type="text" id="issueUrl" placeholder="https://github.com/owner/repo/issues/123"></label>
+      <label>{{ theme_dialect.mission|capitalize }} coordinates<input type="text" id="issueUrl" placeholder="https://github.com/owner/repo/issues/123"></label>
       <div class="two-col">
         <label>Insertion point<input type="text" id="baseBranch" value="develop"></label>
-        <label>Operation prefix<input type="text" id="branchPrefix" value="bug-fix"></label>
+        <label>Operation prefix<input type="text" id="branchPrefix" value="feature"></label>
       </div>
       <div class="lab-actions">
-        <button class="btn btn-primary" onclick="generatePrompt('investigation')">Forge investigation</button>
-        <button class="btn" onclick="generatePrompt('review')">Forge audit</button>
-        <button class="btn" onclick="generatePrompt('all-in-one')">Forge full operation</button>
-        <a class="btn btn-launch-small" href="/jobs">Deploy from contracts</a>
+        <button class="btn btn-primary" onclick="generatePrompt('investigation')">Prepare investigation</button>
+        <button class="btn" onclick="generatePrompt('review')">Prepare independent review</button>
+        <button class="btn" onclick="generatePrompt('all-in-one')">Prepare full operation</button>
+        <a class="btn btn-launch-small" href="/jobs">Deploy {{ theme_dialect.missions }}</a>
       </div>
     </div>
   </section>
 </div>
 
 <div id="output-wrap" hidden>
-  <header class="section-title"><h2>Data shard // ready</h2><button id="copyBtn" class="btn btn-small" onclick="copyOutput()">Copy shard</button></header>
+  <header class="section-title"><h2>{{ theme_dialect.prompt_output }}</h2><button id="copyBtn" class="btn btn-small" onclick="copyOutput()">{{ theme_dialect.prompt_copy }}</button></header>
   <pre id="output" class="logs prompt-output"></pre>
 </div>
 
 <script>
+const DIALECT = {{ theme_dialect|tojson }};
+const PROMPT_COPY = {{ {'copied': theme_dialect.prompt_copy|upper ~ ' // DONE', 'copy': theme_dialect.prompt_copy, 'syncing': theme_dialect.prompt_sync|upper ~ '…'}|tojson }};
 fetch('/api/user').then(r => r.json()).then(data => {
   if (data.login) {
     document.getElementById('auth-status').hidden = false;
@@ -91,30 +93,32 @@ function showOutput(text) {
 function copyOutput() {
   navigator.clipboard.writeText(document.getElementById('output').textContent).then(() => {
     const btn = document.getElementById('copyBtn');
-    btn.textContent = 'SHARD COPIED';
-    setTimeout(() => { btn.textContent = 'Copy shard'; }, 2000);
+    btn.textContent = PROMPT_COPY.copied;
+    setTimeout(() => { btn.textContent = PROMPT_COPY.copy; }, 2000);
   }).catch(err => alert('Failed to copy: ' + err));
 }
 
 async function syncGithub() {
   const status = document.getElementById('ticketStatus');
   const button = document.querySelector('button[onclick="syncGithub()"]');
-  status.textContent = 'SCANNING NETWORK…';
+  status.textContent = PROMPT_COPY.syncing;
   status.classList.remove('sync-error');
   button.disabled = true;
   try {
+    const repositories = document.getElementById('repository').value
+      .split(',').map(value => value.trim()).filter(Boolean);
     const res = await fetch('/tickets/sync', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({repository: document.getElementById('repository').value})
+      body: JSON.stringify({repositories})
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `GitHub sync failed (${res.status})`);
-    status.textContent = `${data.count} ELIGIBLE CONTRACTS // ${data.synced_count ?? data.count} OPEN ISSUES SCANNED`;
+    status.textContent = `${data.count} ELIGIBLE ${DIALECT.missions.toUpperCase()} // ${data.synced_count ?? data.count} OPEN ISSUES RECEIVED`;
     await loadTickets();
   } catch (error) {
     status.classList.add('sync-error');
-    status.textContent = `GITHUB SCAN FAILED // ${error.message}`;
+    status.textContent = `${DIALECT.prompt_sync.toUpperCase()} FAILED // ${error.message}`;
   } finally {
     button.disabled = false;
   }
@@ -126,11 +130,11 @@ async function loadTickets() {
   const queue = document.getElementById('ticketQueue');
   queue.replaceChildren();
   if (!data.tickets.length) {
-    queue.innerHTML = '<div class="empty-state"><span>⌁</span><strong>NO CONTRACT SIGNALS</strong><small>Scan a network district to acquire targets.</small></div>';
+    queue.innerHTML = `<div class="empty-state"><span>⌁</span><strong>${DIALECT.empty}</strong><small>Refresh ${DIALECT.prompt_regions.toLowerCase()} to receive new items.</small></div>`;
     return;
   }
   const threatOf = p => ({P0: 'critical', P1: 'high', P2: 'medium'}[p] || 'low');
-  const threatName = p => ({P0: 'CYBERPSYCHO', P1: 'HOSTILE', P2: 'WATCHED'}[p] || 'CLEAN');
+  const threatName = p => DIALECT.threats[p] || DIALECT.threats.other;
   for (const t of data.tickets) {
     const threat = threatOf(t.priority);
     const row = document.createElement('button');
@@ -145,7 +149,7 @@ async function loadTickets() {
       <span class="issue-main">
         <span class="issue-title"></span>
         <span class="issue-labels">${t.priority ? `<i class="gh-label threat-${threat}">${t.priority}</i>` : ''}${labels}</span>
-        <small class="issue-meta">#${t.number} // HANDLER ${t.assignees || 'UNASSIGNED'} // SIGNAL ${String(t.updated_at || '').slice(0, 10)}</small>
+        <small class="issue-meta">${t.repository} #${t.number} // OWNER ${t.assignees || 'UNASSIGNED'} // UPDATED ${String(t.updated_at || '').slice(0, 10)}</small>
       </span>
       <span class="issue-side"><b class="threat-tag threat-${threat}">${threatName(t.priority)}</b></span>`;
     row.querySelector('.issue-title').textContent = t.title;
@@ -155,7 +159,7 @@ async function loadTickets() {
   empty.id = 'queue-search-empty';
   empty.className = 'empty-state';
   empty.hidden = true;
-  empty.innerHTML = '<span>⌁</span><strong>NO MATCHING CONTRACTS</strong><small>Adjust the target number or search phrase.</small>';
+  empty.innerHTML = `<span>⌁</span><strong>NO MATCHING ${DIALECT.missions.toUpperCase()}</strong><small>Adjust the ticket number or search phrase.</small>`;
   queue.appendChild(empty);
   filterSyncedTickets(document.getElementById('queue-search')?.value || '');
 }

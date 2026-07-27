@@ -1,0 +1,1534 @@
+/* MergeQuest // Frosthold
+   An original Nordic-fantasy skin built from CSS-only stone, iron, parchment,
+   bronze, frost, and mist motifs. No game artwork, logos, or copied assets. */
+
+html[data-theme="skyrim"] {
+  color-scheme: dark;
+  --bg: #0e1212;
+  --bg-inset: #080b0b;
+  --panel: #191d1c;
+  --panel-2: #242724;
+  --border: #595e58;
+  --border-bright: #9a9787;
+  --border-muted: #353a37;
+  --text: #e8e3d3;
+  --muted: #aaa698;
+  --accent: #a8c1c6;
+  --green: #91aa7e;
+  --green-emphasis: #667f57;
+  --red: #bd6957;
+  --red-emphasis: #8e4438;
+  --yellow: #c7aa69;
+  --orange: #b87948;
+  --purple: #8e839d;
+  --gold: #c7aa69;
+  --radius: 2px;
+  --font: "Alegreya", Georgia, "Times New Roman", serif;
+  --display: "Cinzel", Georgia, "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --stone-shadow: rgba(0, 0, 0, .42);
+  --frost-wash: rgba(168, 193, 198, .1);
+  --bronze-wash: rgba(199, 170, 105, .1);
+}
+
+html[data-theme="skyrim"] body {
+  min-height: 100vh;
+  color: var(--text);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse at 14% 2%, rgba(168,193,198,.11), transparent 31%),
+    radial-gradient(ellipse at 90% 66%, rgba(199,170,105,.055), transparent 32%),
+    linear-gradient(118deg, rgba(255,255,255,.018) 0 1px, transparent 1px 15px),
+    linear-gradient(145deg, #131817, #090c0c 58%, #151917);
+  background-size: auto, auto, 21px 21px, auto;
+  font-family: var(--font);
+}
+
+html[data-theme="skyrim"] body::after {
+  opacity: .34;
+  background:
+    repeating-radial-gradient(circle at 17% 23%, rgba(222,235,235,.09) 0 1px, transparent 1px 13px),
+    radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,.72) 100%);
+  background-size: 137px 113px, auto;
+  background-blend-mode: screen, normal;
+  mix-blend-mode: normal;
+}
+
+html[data-theme="skyrim"] h1,
+html[data-theme="skyrim"] h2,
+html[data-theme="skyrim"] .brand-lockup,
+html[data-theme="skyrim"] .gh-box-header strong,
+html[data-theme="skyrim"] .section-title,
+html[data-theme="skyrim"] legend {
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: .075em;
+}
+
+html[data-theme="skyrim"] h1 {
+  color: #f1ecdc;
+  font-size: 29px;
+  line-height: 1.08;
+  text-shadow: 0 2px 0 #080a09;
+}
+
+html[data-theme="skyrim"] h2 { color: #ddd4bd; }
+html[data-theme="skyrim"] a { color: #b7d0d4; }
+html[data-theme="skyrim"] a:hover { color: #e4f3f3; }
+
+html[data-theme="skyrim"] code {
+  color: #d9e7e6;
+  border: 1px solid rgba(168,193,198,.2);
+  border-radius: 1px;
+  background: rgba(168,193,198,.07);
+  font-family: var(--mono);
+}
+
+/* Frostbound atmosphere */
+html[data-theme="skyrim"] .ambient-stage {
+  background:
+    linear-gradient(122deg, transparent 47%, rgba(168,193,198,.018) 48%, transparent 49%),
+    linear-gradient(58deg, transparent 68%, rgba(199,170,105,.014) 69%, transparent 70%);
+  background-size: 180px 180px, 230px 230px;
+}
+
+html[data-theme="skyrim"] .ambient-orb {
+  opacity: .09;
+  filter: blur(115px);
+  animation: skyrim-mist-drift 25s ease-in-out infinite alternate;
+}
+
+html[data-theme="skyrim"] .ambient-orb-cyan { background: #9ebdc3; }
+html[data-theme="skyrim"] .ambient-orb-pink { background: #826d4d; }
+
+html[data-theme="skyrim"] .cursor-glow {
+  width: 470px;
+  height: 470px;
+  background: radial-gradient(circle, rgba(183,211,215,.05), transparent 68%);
+  transition-duration: .2s;
+}
+
+html[data-theme="skyrim"] .click-spark {
+  border: 1px solid #c7aa69;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(168,193,198,.14), inset 0 0 0 2px rgba(199,170,105,.3);
+  animation-name: skyrim-rune-spark;
+}
+
+/* Iron-and-stone header */
+html[data-theme="skyrim"] .gh-header {
+  border-bottom: 3px double #746f5f;
+  background:
+    linear-gradient(90deg, transparent, rgba(168,193,198,.035) 50%, transparent),
+    repeating-linear-gradient(112deg, rgba(255,255,255,.014) 0 2px, transparent 2px 11px),
+    #121716;
+  box-shadow: 0 9px 26px rgba(0,0,0,.48);
+}
+
+html[data-theme="skyrim"] .gh-header::after {
+  left: 8%;
+  bottom: -2px;
+  width: 28%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #bca060, transparent);
+  box-shadow: none;
+}
+
+html[data-theme="skyrim"] .gh-header-inner { padding-top: 13px; }
+html[data-theme="skyrim"] .brand { min-width: 286px; }
+
+html[data-theme="skyrim"] .brand-mark {
+  width: 44px;
+  height: 44px;
+  color: #e7dfc9;
+  border: 1px solid #9b8b67;
+  border-radius: 3px;
+  background:
+    linear-gradient(135deg, transparent 18%, rgba(199,170,105,.17) 18% 21%, transparent 21% 79%, rgba(199,170,105,.17) 79% 82%, transparent 82%),
+    #252a27;
+  box-shadow: inset 0 0 0 3px #111514, inset 0 0 0 4px #6d685a, 0 3px 8px rgba(0,0,0,.6);
+  clip-path: polygon(50% 0, 100% 20%, 92% 82%, 50% 100%, 8% 82%, 0 20%);
+  font: 700 17px/1 var(--display);
+  letter-spacing: -.08em;
+  text-shadow: 0 1px 0 #000;
+}
+
+html[data-theme="skyrim"] .brand-mark span {
+  color: #b8d0d3;
+  -webkit-text-stroke: 0;
+}
+
+html[data-theme="skyrim"] .brand:hover .brand-mark {
+  transform: translateY(-1px) rotate(1deg);
+  box-shadow: inset 0 0 0 3px #111514, inset 0 0 0 4px #a48b56, 0 4px 12px rgba(0,0,0,.65);
+}
+
+html[data-theme="skyrim"] .brand:hover .brand-lockup strong { text-shadow: 0 2px #090b0a; }
+html[data-theme="skyrim"] .brand-lockup strong { color: #eee7d5; font-size: 18px; letter-spacing: .14em; }
+html[data-theme="skyrim"] .brand-lockup small { color: #bca66f; font: 9px/1.4 var(--mono); letter-spacing: .08em; }
+
+html[data-theme="skyrim"] .private-badge {
+  padding: 3px 9px;
+  color: #c9b57f;
+  border: 1px solid #706951;
+  border-radius: 1px;
+  background: rgba(199,170,105,.035);
+  font: 9px var(--display);
+  letter-spacing: .09em;
+}
+
+html[data-theme="skyrim"] .guard-pill {
+  min-width: 205px;
+  color: #c9d9d7;
+  border: 1px solid #546662;
+  border-radius: 1px;
+  background: linear-gradient(#1c2422, #111615);
+  box-shadow: inset 0 0 9px rgba(0,0,0,.38);
+  font: 9px var(--mono);
+}
+
+html[data-theme="skyrim"] .pulse-dot {
+  width: 7px;
+  height: 7px;
+  background: #92ad9e;
+  box-shadow: 0 0 0 2px #293834, 0 0 7px rgba(168,193,198,.45);
+  animation: skyrim-ember-pulse 2.8s ease-in-out infinite;
+}
+
+html[data-theme="skyrim"] .tabnav { gap: 2px; }
+
+html[data-theme="skyrim"] .tabnav a {
+  color: #bbb8ae;
+  border-right: 1px solid rgba(199,170,105,.08);
+  border-radius: 0;
+  background: transparent;
+  font: 600 12px/1 var(--display);
+  letter-spacing: .075em;
+}
+
+html[data-theme="skyrim"] .tabnav a small { color: #777e7a; font: 8px var(--mono); }
+
+html[data-theme="skyrim"] .tabnav a:hover {
+  color: #eef0e8;
+  background: linear-gradient(0deg, rgba(168,193,198,.08), transparent);
+  transform: translateY(-1px);
+}
+
+html[data-theme="skyrim"] .tabnav a::after {
+  width: 24px;
+  height: 2px;
+  border-radius: 0;
+  background: #c7aa69;
+  box-shadow: 0 0 7px rgba(199,170,105,.35);
+}
+
+html[data-theme="skyrim"] .tabnav a.selected {
+  color: #e7dcc2;
+  border-bottom-color: #c7aa69;
+  background: linear-gradient(0deg, rgba(199,170,105,.12), transparent);
+}
+
+html[data-theme="skyrim"] .tabnav a.selected small { color: #b5cdd0; }
+
+/* Carved shared surfaces and controls */
+html[data-theme="skyrim"] .shell::before {
+  content: "TEMPER THE CODE // HONOUR THE PROOF";
+  color: rgba(187,208,210,.026);
+  font-family: var(--display);
+  font-size: 58px;
+  letter-spacing: .015em;
+}
+
+html[data-theme="skyrim"] .gh-box,
+html[data-theme="skyrim"] .hud {
+  overflow: visible;
+  border: 1px solid #4e5551;
+  border-top: 2px solid #77766b;
+  border-bottom-color: #2a302e;
+  background:
+    linear-gradient(125deg, rgba(255,255,255,.025), transparent 24%),
+    linear-gradient(90deg, rgba(168,193,198,.035), transparent 45%),
+    rgba(24,29,27,.95);
+  box-shadow: 5px 6px 0 rgba(0,0,0,.25), inset 0 0 28px rgba(0,0,0,.13);
+  clip-path: none;
+}
+
+html[data-theme="skyrim"] .gh-box::after,
+html[data-theme="skyrim"] .hud::after {
+  right: 12px;
+  top: -2px;
+  width: 62px;
+  height: 3px;
+  background: linear-gradient(90deg, #8e784d, #c7aa69, #75613e);
+  box-shadow: none;
+}
+
+html[data-theme="skyrim"] .gh-box:hover {
+  border-color: #69716c;
+  border-top-color: #a6a18f;
+  box-shadow: 5px 7px 0 rgba(0,0,0,.3), inset 0 0 28px rgba(168,193,198,.025);
+}
+
+html[data-theme="skyrim"] .gh-box-header {
+  min-height: 43px;
+  padding-left: 18px;
+  border-bottom: 1px solid #4a514d;
+  background:
+    linear-gradient(90deg, rgba(199,170,105,.075), transparent 48%),
+    #222724;
+}
+
+html[data-theme="skyrim"] .gh-box-header::before {
+  width: 3px;
+  background: #a58b56;
+  box-shadow: none;
+}
+
+html[data-theme="skyrim"] .gh-box-header strong { color: #e7dfcd; font-size: 14px; }
+
+html[data-theme="skyrim"] .board-hint,
+html[data-theme="skyrim"] .eyebrow {
+  font-family: var(--mono);
+  text-transform: uppercase;
+}
+
+html[data-theme="skyrim"] .eyebrow { color: #c7aa69 !important; letter-spacing: .09em; }
+html[data-theme="skyrim"] .board-hint { color: #92988f; }
+
+html[data-theme="skyrim"] .page-heading {
+  max-width: 860px;
+  padding: 9px 0 13px 18px;
+  border-left: 4px double #b3955a;
+  border-bottom: 1px solid rgba(168,193,198,.18);
+}
+
+html[data-theme="skyrim"] .page-heading .hero-copy { color: #b5b2a5; }
+
+html[data-theme="skyrim"] .section-title {
+  padding: 0 0 8px 13px;
+  border-left: 3px double #c7aa69;
+  border-bottom: 1px solid #414743;
+}
+
+html[data-theme="skyrim"] .section-title span { color: #949a91; font: 9px var(--mono); }
+
+html[data-theme="skyrim"] input,
+html[data-theme="skyrim"] textarea,
+html[data-theme="skyrim"] select {
+  color: #e8e3d3;
+  border: 1px solid #626963;
+  border-radius: 1px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.018), transparent),
+    #111615;
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.35);
+  font-family: var(--mono);
+}
+
+html[data-theme="skyrim"] input::placeholder,
+html[data-theme="skyrim"] textarea::placeholder { color: #767c76; }
+
+html[data-theme="skyrim"] input:focus,
+html[data-theme="skyrim"] textarea:focus,
+html[data-theme="skyrim"] select:focus {
+  border-color: #aac4c8;
+  box-shadow: 0 0 0 2px rgba(168,193,198,.18), inset 0 2px 6px rgba(0,0,0,.36);
+}
+
+html[data-theme="skyrim"] .ticket-search { background: #0e1312; }
+
+html[data-theme="skyrim"] .btn,
+html[data-theme="skyrim"] button,
+html[data-theme="skyrim"] .btn-launch {
+  color: #e4ded0;
+  border: 1px solid #6a6d63;
+  border-radius: 1px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.055), transparent 38%),
+    linear-gradient(#303632, #202522);
+  box-shadow: 0 2px 0 #090c0b;
+  clip-path: none;
+  font-family: var(--display);
+  letter-spacing: .055em;
+}
+
+html[data-theme="skyrim"] .btn:hover,
+html[data-theme="skyrim"] button:hover {
+  color: #111513;
+  border-color: #d0bd8a;
+  background: #c7aa69;
+  box-shadow: 0 2px 0 #080a09, 0 0 12px rgba(199,170,105,.14);
+  transform: translateY(-1px);
+}
+
+html[data-theme="skyrim"] .btn-primary,
+html[data-theme="skyrim"] .btn-launch-small {
+  color: #111513;
+  border-color: #d2bb81;
+  background: linear-gradient(#d0b574, #a88b50);
+  text-shadow: 0 1px rgba(255,255,255,.2);
+}
+
+html[data-theme="skyrim"] .btn-primary:hover,
+html[data-theme="skyrim"] .btn-launch-small:hover {
+  color: #080b0a;
+  border-color: #ead9aa;
+  background: #d9bf7d;
+}
+
+html[data-theme="skyrim"] .btn-danger,
+html[data-theme="skyrim"] .btn-danger:hover {
+  color: #f5e7dc;
+  border-color: #bd6957;
+  background: #844237;
+}
+
+html[data-theme="skyrim"] .btn-danger-outline {
+  color: #d98b78;
+  border-color: #875449;
+  background: rgba(132,66,55,.08);
+}
+
+html[data-theme="skyrim"] .btn-launch {
+  border-left: 4px double #a8c1c6;
+  background: linear-gradient(105deg, rgba(168,193,198,.08), #252a27);
+}
+
+html[data-theme="skyrim"] .btn-launch:nth-child(even) { border-left-color: #a58d60; }
+
+html[data-theme="skyrim"] .btn-launch:hover {
+  color: #efe8d6;
+  border-color: #c7aa69;
+  border-left-color: #c7aa69;
+  background: rgba(199,170,105,.1);
+  box-shadow: 0 3px 0 #090c0b;
+}
+
+html[data-theme="skyrim"] .btn-launch small { color: #abc3c6; }
+html[data-theme="skyrim"] .btn-launch b { color: #d2b771; animation: skyrim-chevron-breathe 1.8s ease-in-out infinite; }
+
+html[data-theme="skyrim"] .strategy,
+html[data-theme="skyrim"] .risk-box {
+  border-color: #555d58;
+  border-radius: 1px;
+  background: rgba(16,21,20,.74);
+}
+
+html[data-theme="skyrim"] .strategy:hover,
+html[data-theme="skyrim"] .strategy:has(input:checked) {
+  border-color: #b49b63;
+  background: linear-gradient(90deg, rgba(199,170,105,.09), transparent);
+}
+
+html[data-theme="skyrim"] .strategy:has(input:checked) { box-shadow: inset 4px 0 #c7aa69; }
+
+html[data-theme="skyrim"] .strategy input,
+html[data-theme="skyrim"] .check input { accent-color: #b39559; }
+html[data-theme="skyrim"] .strategy-copy b { color: #e5dcc7; font-family: var(--display); }
+html[data-theme="skyrim"] .strategy-odds { color: #ccb273; font-family: var(--mono); }
+
+html[data-theme="skyrim"] .risk-box {
+  border-left: 3px double #a8c1c6;
+  background: linear-gradient(90deg, rgba(168,193,198,.075), transparent);
+}
+
+html[data-theme="skyrim"] .advanced-details { border-top-color: #59605b; }
+html[data-theme="skyrim"] .advanced-details summary { color: #b9cfd1; font-family: var(--display); }
+html[data-theme="skyrim"] .safety { color: #999e96; font-family: var(--mono); }
+
+/* Quest board, loadout, archive, and records */
+html[data-theme="skyrim"] .mission-layout,
+html[data-theme="skyrim"] .lab-layout,
+html[data-theme="skyrim"] .mission-grid {
+  border-top-color: #b69a5e;
+  border-bottom-color: #343b37;
+  background: rgba(7,10,9,.38);
+}
+
+html[data-theme="skyrim"] .launch-card,
+html[data-theme="skyrim"] .lab-layout > .gh-box + .gh-box,
+html[data-theme="skyrim"] .mission-main { border-left-color: rgba(168,193,198,.22) !important; }
+
+html[data-theme="skyrim"] .issue-list {
+  scrollbar-color: #777b71 #151a18;
+  scrollbar-width: thin;
+}
+
+html[data-theme="skyrim"] .issue-row-wrap { border-bottom-color: #353c38; }
+
+html[data-theme="skyrim"] .issue-row {
+  background: linear-gradient(90deg, rgba(255,255,255,.012), transparent);
+}
+
+html[data-theme="skyrim"] .issue-row:hover {
+  background: linear-gradient(90deg, rgba(168,193,198,.095), transparent);
+  transform: translateX(2px);
+}
+
+html[data-theme="skyrim"] .issue-row.selected {
+  background: linear-gradient(90deg, rgba(199,170,105,.16), rgba(168,193,198,.035));
+  box-shadow: inset 4px 0 #c7aa69;
+}
+
+html[data-theme="skyrim"] .issue-row.selected::after {
+  content: "QUEST ACCEPTED";
+  color: #d0b877;
+  font-family: var(--mono);
+}
+
+html[data-theme="skyrim"] .issue-row:hover .issue-title { color: #dce8e7; }
+html[data-theme="skyrim"] .issue-title { color: #e7e0cf; font-family: var(--display); font-size: 15px; letter-spacing: .035em; }
+
+html[data-theme="skyrim"] .issue-meta,
+html[data-theme="skyrim"] .test-plan summary { color: #969d96; font-family: var(--mono); }
+
+html[data-theme="skyrim"] .issue-open-icon {
+  border-radius: 2px;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  background: rgba(168,193,198,.035);
+}
+
+html[data-theme="skyrim"] .gh-label,
+html[data-theme="skyrim"] .bounty,
+html[data-theme="skyrim"] .state {
+  border-radius: 1px;
+  clip-path: none;
+  font-family: var(--mono);
+}
+
+html[data-theme="skyrim"] .bounty { color: #d6bd7c; border-color: #84724e; background: rgba(199,170,105,.08); }
+html[data-theme="skyrim"] .threat-tag.threat-critical,
+html[data-theme="skyrim"] .gh-label.threat-critical { color: #efad9e; border-color: #9d5749; background: rgba(142,68,56,.18); }
+html[data-theme="skyrim"] .threat-tag.threat-high,
+html[data-theme="skyrim"] .gh-label.threat-high { color: #e2b38d; border-color: #9c6843; background: rgba(156,104,67,.15); }
+html[data-theme="skyrim"] .threat-tag.threat-medium,
+html[data-theme="skyrim"] .gh-label.threat-medium { color: #dbc98f; border-color: #8d7b4d; background: rgba(141,123,77,.15); }
+html[data-theme="skyrim"] .threat-tag.threat-low,
+html[data-theme="skyrim"] .gh-label.threat-low { color: #bfd0b0; border-color: #687d5d; background: rgba(104,125,93,.15); }
+
+html[data-theme="skyrim"] .test-plan { border-left-color: #4a5551; }
+html[data-theme="skyrim"] .test-plan summary { color: #acc4c7; }
+html[data-theme="skyrim"] .test-plan-body { color: #d5d1c5; }
+
+html[data-theme="skyrim"] .empty-state span { color: #b99e64; }
+html[data-theme="skyrim"] .empty-state strong { color: #dcd6c6; font-family: var(--display); }
+
+html[data-theme="skyrim"] .board-tab { color: #cbc5b6; font-family: var(--display); }
+html[data-theme="skyrim"] .board-tab svg { color: #91aa7e; }
+html[data-theme="skyrim"] .live-dot { color: #a9c397; font-family: var(--mono); }
+html[data-theme="skyrim"] .live-dot.locked { color: #d0b673; }
+
+html[data-theme="skyrim"] .batch-monitor {
+  border-top: 3px double #b4995e;
+  background: linear-gradient(90deg, rgba(199,170,105,.04), transparent);
+}
+
+html[data-theme="skyrim"] .batch-card {
+  color: #e2dbc9;
+  border: 1px solid #4b5550;
+  border-top: 3px double #c7aa69;
+  background: linear-gradient(135deg, rgba(199,170,105,.07), transparent), #171c1a;
+  box-shadow: 3px 4px 0 rgba(0,0,0,.22);
+}
+
+html[data-theme="skyrim"] .batch-card:hover {
+  color: #f0eadb;
+  border-color: #777c70;
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+
+html[data-theme="skyrim"] .batch-card.batch-done { border-top-color: #829b72; }
+html[data-theme="skyrim"] .batch-ticket { color: #9da39c; }
+html[data-theme="skyrim"] .batch-stage { color: #b8cfd0; font-family: var(--mono); }
+html[data-theme="skyrim"] .batch-status { color: #d1b674; font-family: var(--display); }
+
+html[data-theme="skyrim"] .switch span {
+  border-color: #5a645e;
+  background: #161c19;
+  box-shadow: inset 0 1px 5px rgba(0,0,0,.35);
+}
+
+html[data-theme="skyrim"] .switch span::after { background: #969f98; }
+html[data-theme="skyrim"] .switch input:checked + span { border-color: #718963; background: #5e7653; }
+html[data-theme="skyrim"] .switch input:checked + span::after { background: #e2eadb; }
+
+html[data-theme="skyrim"] .flash {
+  border-radius: 1px;
+  border-color: #545d57;
+  background: rgba(168,193,198,.045);
+  box-shadow: inset 3px 0 #829b96;
+}
+
+html[data-theme="skyrim"] .flash-error {
+  color: #e8aa9b;
+  border-color: #8e4c41;
+  background: rgba(142,76,65,.1);
+  box-shadow: inset 3px 0 #bd6957;
+}
+
+html[data-theme="skyrim"] .table-wrap { border-color: #4c544f; }
+
+html[data-theme="skyrim"] th {
+  color: #cbb477;
+  border-bottom-color: #5c625b;
+  background: #171c1a;
+  font-family: var(--display);
+  letter-spacing: .055em;
+}
+
+html[data-theme="skyrim"] td { border-bottom-color: #343a37; }
+html[data-theme="skyrim"] tbody tr { background: linear-gradient(90deg, rgba(168,193,198,.02), transparent); }
+html[data-theme="skyrim"] tbody tr:hover { background: rgba(168,193,198,.06); }
+
+html[data-theme="skyrim"] .payout,
+html[data-theme="skyrim"] .in-play,
+html[data-theme="skyrim"] .credit-counter { color: #d2b772 !important; }
+
+html[data-theme="skyrim"] .state-completed { color: #bcd0ac; border-color: #687f5a; background: rgba(104,127,90,.15); }
+html[data-theme="skyrim"] .state-running,
+html[data-theme="skyrim"] .state-queued { color: #d8c080; border-color: #8b7747; background: rgba(139,119,71,.14); }
+html[data-theme="skyrim"] .state-waiting_approval { color: #c8dadd; border-color: #637d80; background: rgba(99,125,128,.14); }
+html[data-theme="skyrim"] .state-failed,
+html[data-theme="skyrim"] .state-stopped,
+html[data-theme="skyrim"] .state-closed { color: #e39b8a; border-color: #955044; background: rgba(149,80,68,.14); }
+
+/* Progression, treasury, accolades, and guild roster */
+html[data-theme="skyrim"] .streetcred-hud {
+  border-color: #6c6c60;
+  border-top-color: #c7aa69;
+  background: linear-gradient(112deg, rgba(199,170,105,.1), rgba(24,29,27,.96) 42%, rgba(168,193,198,.07));
+}
+
+html[data-theme="skyrim"] .streetcred-hud::before {
+  content: "SAGA RECORD // FROSTHOLD WAYFARER";
+  color: #c7aa69;
+  font: 8px var(--mono);
+  letter-spacing: .11em;
+}
+
+html[data-theme="skyrim"] .rank-sigil {
+  border-left: 3px double #c7aa69;
+  background: linear-gradient(90deg, rgba(199,170,105,.1), transparent);
+}
+
+html[data-theme="skyrim"] .rank-sigil::before {
+  width: 32px;
+  height: 32px;
+  border: 2px solid #c7aa69;
+  border-radius: 50% 50% 4px 4px;
+  background: linear-gradient(135deg, transparent 45%, rgba(168,193,198,.32) 46% 54%, transparent 55%);
+  box-shadow: inset 0 0 0 5px #111514, inset 0 0 0 7px #6d785f, 0 0 10px rgba(168,193,198,.18);
+  transform: rotate(45deg);
+}
+
+html[data-theme="skyrim"] .rank-sigil span { color: #b7ced1; font-family: var(--mono); }
+html[data-theme="skyrim"] .hud-rank-row strong { color: #e3d5ad; font-family: var(--display); }
+html[data-theme="skyrim"] .hud-rank-row .muted { font-family: var(--mono); }
+html[data-theme="skyrim"] .hud-stats article { border-left-color: #4b544f; }
+html[data-theme="skyrim"] .hud-stats strong { color: #d3b875; font-family: var(--display); }
+
+html[data-theme="skyrim"] .xp-bar { border-color: #505853; border-radius: 1px; background: #0e1312; }
+
+html[data-theme="skyrim"] .xp-bar span,
+html[data-theme="skyrim"] .fund-meter span {
+  background: linear-gradient(90deg, #708a7c, #adc6c8 50%, #c7aa69);
+  box-shadow: 0 0 7px rgba(168,193,198,.2);
+}
+
+html[data-theme="skyrim"] .fund-card {
+  border: 1px solid #5e6158;
+  border-left: 4px double #c7aa69;
+  background:
+    linear-gradient(112deg, rgba(199,170,105,.105), rgba(168,193,198,.035) 56%, transparent),
+    rgba(24,29,27,.9);
+  box-shadow: 4px 5px 0 rgba(0,0,0,.25);
+}
+
+html[data-theme="skyrim"] .fund-sigil {
+  color: transparent;
+  border: 1px solid #9d895b;
+  border-radius: 50%;
+  background: #171d1b;
+  box-shadow: inset 0 0 0 4px #303831, inset 0 0 0 5px #9d895b;
+}
+
+html[data-theme="skyrim"] .fund-sigil::before {
+  content: "✦";
+  color: #c7aa69;
+  font: 22px Georgia, serif;
+}
+
+html[data-theme="skyrim"] .fund-copy h2 { font-family: var(--display); }
+html[data-theme="skyrim"] .fund-copy small strong,
+html[data-theme="skyrim"] .fund-total strong { color: #d3b775; }
+
+html[data-theme="skyrim"] .cred-strip { border-color: #444c47; }
+html[data-theme="skyrim"] .cred-node { border-right-color: #414944; background: rgba(12,16,15,.42); }
+
+html[data-theme="skyrim"] .cred-node > b {
+  color: #d2b66f;
+  border-color: #9e895b;
+  border-radius: 50%;
+  clip-path: none;
+  background: radial-gradient(circle, rgba(199,170,105,.09), transparent);
+}
+
+html[data-theme="skyrim"] .cred-node strong { color: #dfd8c7; font-family: var(--display); }
+html[data-theme="skyrim"] .cred-node.unlocked:hover { background: rgba(199,170,105,.08); }
+html[data-theme="skyrim"] .cred-node.locked { opacity: .34; filter: grayscale(1); }
+
+html[data-theme="skyrim"] .operator-identity .hud-copy strong,
+html[data-theme="skyrim"] .identity-bank strong,
+html[data-theme="skyrim"] .rank-number { color: #d3b672; font-family: var(--display); }
+
+html[data-theme="skyrim"] .identity-code {
+  color: #151916;
+  border: 1px solid #e2cd95;
+  border-radius: 50%;
+  background: #c7aa69;
+  clip-path: none;
+  font-family: var(--display);
+}
+
+html[data-theme="skyrim"] .identity-bank { border-left-color: #4b544f; }
+html[data-theme="skyrim"] .repo-switch label { color: #abc4c6; }
+html[data-theme="skyrim"] .rank-metrics { border-top-color: #b3975e; border-bottom-color: #3f4743; }
+
+/* Prompt scriptorium and GitHub oath gate */
+html[data-theme="skyrim"] .lab-head {
+  padding: 13px 16px;
+  border-left: 4px double #a8c1c6;
+  border-bottom: 1px solid #424b46;
+  background: linear-gradient(90deg, rgba(168,193,198,.055), transparent);
+}
+
+html[data-theme="skyrim"] .lab-head > div > p:not(.eyebrow) { color: #aaa99f; }
+html[data-theme="skyrim"] .lab-auth { border-color: #62685f; background: #171c1a; }
+html[data-theme="skyrim"] .lab-actions { border-top-color: #454c48; }
+html[data-theme="skyrim"] .sync-status { color: #bccfd0; font-family: var(--mono); }
+
+html[data-theme="skyrim"] .prompt-output,
+html[data-theme="skyrim"] .logs {
+  color: #d8e3e1;
+  border: 1px solid #48524e;
+  border-radius: 1px;
+  background:
+    linear-gradient(90deg, rgba(168,193,198,.025), transparent),
+    #0b100f;
+  box-shadow: inset 0 0 24px rgba(0,0,0,.3);
+  text-shadow: none;
+}
+
+html[data-theme="skyrim"] .auth-connect-card {
+  border-color: #5b625c;
+  border-top: 3px double #b69a60;
+  background: linear-gradient(135deg, rgba(199,170,105,.08), rgba(168,193,198,.035)), #181d1b;
+  box-shadow: 7px 9px 0 rgba(0,0,0,.28);
+}
+
+html[data-theme="skyrim"] .auth-steps li::before { color: #c7aa69; border-color: #8c7951; background: #151a18; }
+
+/* Active quest and evidence journal */
+html[data-theme="skyrim"] .mission-head {
+  padding: 10px 0 10px 17px;
+  border-left: 4px double #c7aa69;
+  border-bottom: 1px solid #414944;
+}
+
+html[data-theme="skyrim"] .mission-head h1::before { content: "QUEST // "; color: #c7aa69; }
+html[data-theme="skyrim"] .crumbs { color: #919890; font-family: var(--mono); }
+html[data-theme="skyrim"] .mission-target { color: #aaa89d; font-family: var(--mono); }
+
+html[data-theme="skyrim"] .approval-box {
+  border: 1px solid #83744f;
+  border-left: 4px double #c7aa69;
+  background: linear-gradient(90deg, rgba(199,170,105,.13), rgba(24,29,27,.95));
+  box-shadow: inset 0 0 25px rgba(0,0,0,.12);
+}
+
+html[data-theme="skyrim"] .approval-copy strong { color: #e5d7b0; font-family: var(--display); }
+html[data-theme="skyrim"] .gate { border-left-color: #48514c; }
+
+html[data-theme="skyrim"] .gate-icon,
+html[data-theme="skyrim"] .activity-marker {
+  border-radius: 50%;
+  transform: none;
+  background: #151a18;
+}
+
+html[data-theme="skyrim"] .gate-icon > * { transform: none; }
+html[data-theme="skyrim"] .gate.passed .gate-icon { color: #bfd2ae; border-color: #718663; background: rgba(113,134,99,.13); }
+html[data-theme="skyrim"] .gate.running .gate-icon { color: #d8c080; border-color: #b3995c; box-shadow: 0 0 0 3px rgba(199,170,105,.1); }
+html[data-theme="skyrim"] .gate.failed .gate-icon { color: #e49a89; border-color: #9a5144; background: rgba(154,81,68,.13); }
+html[data-theme="skyrim"] .gate-now { color: #c7aa69; font-family: var(--mono); }
+
+html[data-theme="skyrim"] .activity-item.stage { border-radius: 1px; background: linear-gradient(90deg, rgba(168,193,198,.08), transparent); }
+html[data-theme="skyrim"] .activity-item.stage strong { color: #c2d6d7; font-family: var(--mono); }
+html[data-theme="skyrim"] .activity-item.agent .activity-marker { background: #8e839d; box-shadow: none; }
+html[data-theme="skyrim"] .activity-item.error .activity-marker { background: #a65345; }
+html[data-theme="skyrim"] .activity-meta small { color: #848b85; }
+
+html[data-theme="skyrim"] .telemetry-toolbar {
+  border-bottom-color: #46504b;
+  background: rgba(168,193,198,.025);
+}
+
+html[data-theme="skyrim"] .telemetry-filter { color: #9fa59e; border-color: #525b56; background: #151a18; }
+html[data-theme="skyrim"] .telemetry-filter.active { color: #171a17; border-color: #cfb676; background: #c7aa69; }
+
+html[data-theme="skyrim"] .banner-victory {
+  border-color: #6f8461;
+  background: linear-gradient(110deg, rgba(118,145,97,.15), rgba(168,193,198,.045));
+}
+
+html[data-theme="skyrim"] .banner-victory strong { color: #c5d8b5; font-family: var(--display); }
+html[data-theme="skyrim"] .banner-intel { border-color: #9d5749; background: rgba(142,68,56,.1); }
+html[data-theme="skyrim"] .banner-icon { color: #d0b673; border-color: #88754e; background: #1d2420; }
+
+html[data-theme="skyrim"] .victory-stat {
+  border-color: #4b5550;
+  border-radius: 1px;
+  background: #151b18;
+}
+
+html[data-theme="skyrim"] .victory-stat strong { color: #d7c082; font-family: var(--display); }
+html[data-theme="skyrim"] .victory-stat small { color: #949b94; }
+html[data-theme="skyrim"] .checks-box { border-left-color: #4d5852 !important; }
+html[data-theme="skyrim"] .checks-actions { border-top-color: #46504b; background: rgba(168,193,198,.025); }
+
+html[data-theme="skyrim"] .conf-meter {
+  border: 1px solid #505b55;
+  border-radius: 1px;
+  background: #0d1210;
+}
+
+html[data-theme="skyrim"] .conf-meter i {
+  border-radius: 0;
+  background: linear-gradient(90deg, #b09257, #a8c1c6, #91aa7e);
+}
+
+html[data-theme="skyrim"] .job-link { color: #b9cfd0; }
+html[data-theme="skyrim"] .result-box { border-color: #4f5853; background: rgba(17,22,20,.58); }
+html[data-theme="skyrim"] .result-summary dt { color: #b8cdd0; font-family: var(--mono); }
+
+/* Theme chooser, settings ledgers, and preview treatment */
+html[data-theme="skyrim"] .theme-form { background: rgba(13,17,16,.35); }
+
+html[data-theme="skyrim"] .theme-card-body {
+  border-color: #505853;
+  background: rgba(16,21,19,.74);
+  box-shadow: inset 0 0 18px rgba(0,0,0,.17);
+}
+
+html[data-theme="skyrim"] .theme-option:hover .theme-card-body { border-color: #9fa08f; }
+
+html[data-theme="skyrim"] .theme-option > input:checked + .theme-card-body {
+  border-color: #c7aa69;
+  box-shadow: inset 0 0 0 1px #c7aa69, 0 0 18px rgba(199,170,105,.09);
+}
+
+html[data-theme="skyrim"] .theme-option-copy strong { color: #e7dfcc; font-family: var(--display); }
+html[data-theme="skyrim"] .theme-option-copy em { color: #121613; background: #c7aa69; }
+html[data-theme="skyrim"] .theme-option-copy > small { color: #b7cfd1; }
+
+html[data-theme="skyrim"] .theme-preview-skyrim {
+  color: #b9d0d2;
+  background:
+    linear-gradient(145deg, rgba(168,193,198,.1), transparent 46%),
+    linear-gradient(145deg, #111615, #30352f);
+}
+
+html[data-theme="skyrim"] .theme-preview-skyrim::before {
+  inset: 0;
+  z-index: -1;
+  opacity: .38;
+  background:
+    linear-gradient(135deg, transparent 47%, rgba(225,235,233,.18) 48% 49%, transparent 50%),
+    repeating-linear-gradient(25deg, transparent 0 13px, rgba(255,255,255,.035) 13px 14px);
+  background-size: 44px 44px, auto;
+}
+
+html[data-theme="skyrim"] .theme-preview-skyrim::after {
+  inset: 8px;
+  border: 3px double rgba(199,170,105,.45);
+  box-shadow: inset 0 0 28px rgba(0,0,0,.42);
+}
+
+html[data-theme="skyrim"] .theme-preview-skyrim b {
+  color: #e9e2cf;
+  border: 1px solid #a28b59;
+  background: #252b27;
+  box-shadow: inset 0 0 0 3px #101513, 0 0 0 1px #242a27;
+  clip-path: polygon(50% 0, 100% 22%, 90% 82%, 50% 100%, 10% 82%, 0 22%);
+  font-family: var(--display);
+  transform: none;
+}
+
+html[data-theme="skyrim"] .theme-preview-skyrim .theme-preview-rail {
+  height: 3px;
+  background: linear-gradient(90deg, #7a6745, #c7aa69, #9ebcc1);
+  box-shadow: 0 3px rgba(14,18,17,.65);
+}
+
+html[data-theme="skyrim"] .theme-preview-skyrim .theme-preview-panel { border-style: double; }
+html[data-theme="skyrim"] .settings-list dt { color: #b8ced0; font-family: var(--display); }
+html[data-theme="skyrim"] .settings-list dd { border-bottom-color: #39413d; }
+
+/* Trial hall / testing workspace */
+html[data-theme="skyrim"] .testing-hero {
+  min-height: 210px;
+  padding: 34px 42px;
+  border: 1px solid #535c56;
+  border-top: 3px double #c7aa69;
+  background:
+    radial-gradient(circle at 82% 50%, rgba(168,193,198,.13), transparent 27%),
+    linear-gradient(112deg, rgba(199,170,105,.08), transparent 45%),
+    #151a18;
+  box-shadow: 6px 7px 0 rgba(0,0,0,.26);
+}
+
+html[data-theme="skyrim"] .testing-hero h1 {
+  color: #eee7d6;
+  font-family: var(--display);
+  text-shadow: 0 2px #070908;
+}
+
+html[data-theme="skyrim"] .testing-hero::after {
+  opacity: .35;
+  background:
+    repeating-radial-gradient(circle at 78% 45%, rgba(193,217,219,.17) 0 1px, transparent 1px 13px),
+    linear-gradient(90deg, transparent 70%, rgba(168,193,198,.05));
+}
+
+html[data-theme="skyrim"] .scanner-orb {
+  width: 140px;
+  height: 140px;
+  border: 3px double #7f8f89;
+  border-radius: 50%;
+  background: radial-gradient(circle, #28312e 0 16%, #101513 17% 41%, rgba(168,193,198,.08) 42% 43%, transparent 44%);
+  box-shadow: inset 0 0 25px #050706, 0 0 25px rgba(168,193,198,.08);
+}
+
+html[data-theme="skyrim"] .scanner-orb::before {
+  content: "✧";
+  display: grid;
+  place-items: center;
+  position: absolute;
+  inset: 27px;
+  color: #c7aa69;
+  border: 1px dashed #819793;
+  border-radius: 50%;
+  font: 31px Georgia, serif;
+  animation: skyrim-rune-turn 12s linear infinite;
+}
+
+html[data-theme="skyrim"] .scanner-orb i { border-color: #71817c; animation: skyrim-rune-turn 10s linear infinite reverse; }
+html[data-theme="skyrim"] .scanner-orb span { color: #c8dddc; font-family: var(--mono); }
+
+html[data-theme="skyrim"] .testing-target,
+html[data-theme="skyrim"] .testing-workspace { border-color: #505954; box-shadow: 4px 5px 0 rgba(0,0,0,.23); }
+
+html[data-theme="skyrim"] .testing-ticket-picker input[type="search"] { border-color: #68716b; background: #101513; }
+html[data-theme="skyrim"] #testing-search-help { color: #989f98; font-family: var(--mono); }
+
+html[data-theme="skyrim"] .testing-mission {
+  border: 1px solid #4e5752;
+  background: linear-gradient(90deg, rgba(168,193,198,.055), transparent), #151a18;
+}
+
+html[data-theme="skyrim"] .mission-icon {
+  color: #d0b571;
+  border-color: #8f7950;
+  border-radius: 50%;
+  background: #202622;
+}
+
+html[data-theme="skyrim"] .testing-mission strong { color: #e3dccb; font-family: var(--display); }
+html[data-theme="skyrim"] .testing-mission small { color: #9ea39b; }
+
+html[data-theme="skyrim"] .scan-protocol li {
+  color: #aaa99f;
+  border-color: #454d48;
+  background: rgba(9,13,12,.38);
+  font-family: var(--mono);
+}
+
+html[data-theme="skyrim"] .scan-protocol li::before { color: #c7aa69; }
+
+html[data-theme="skyrim"] .btn-compact {
+  color: #c5d7d7;
+  border-color: #5c6b67;
+  background: #171d1b;
+}
+
+html[data-theme="skyrim"] .btn-compact:hover { color: #121613; border-color: #c7aa69; background: #c7aa69; box-shadow: none; }
+html[data-theme="skyrim"] .test-checklist h2 { color: #d6bd7c; font-family: var(--display); }
+
+html[data-theme="skyrim"] .test-job-state {
+  color: #b7c8c7;
+  border-color: #4c5d59;
+  background: #121817;
+  font-family: var(--mono);
+}
+
+html[data-theme="skyrim"] .test-job-state::after { background: #91aa7e; box-shadow: 0 0 0 2px #32402d; }
+html[data-theme="skyrim"] .test-job-state[data-status="queued"]::after,
+html[data-theme="skyrim"] .test-job-state[data-status="waiting_approval"]::after { background: #c7aa69; box-shadow: 0 0 0 2px #4a402b; }
+html[data-theme="skyrim"] .test-job-state[data-status="failed"]::after,
+html[data-theme="skyrim"] .test-job-state[data-status="stopped"]::after,
+html[data-theme="skyrim"] .test-job-state[data-status="closed"]::after { background: #bd6957; box-shadow: 0 0 0 2px #542f28; }
+
+html[data-theme="skyrim"] .qa-phases li {
+  color: #858d87;
+  border-color: #424b46;
+  background: #141917;
+}
+
+html[data-theme="skyrim"] .qa-phases li:last-child { border-right-color: #424b46; }
+html[data-theme="skyrim"] .qa-phases li::after { border-color: #545d57; background: #141917; }
+html[data-theme="skyrim"] .qa-phases small { color: #747c76; }
+
+html[data-theme="skyrim"] .qa-phases li.active {
+  color: #d6c187;
+  border-color: #9c8452;
+  background: rgba(199,170,105,.085);
+}
+
+html[data-theme="skyrim"] .qa-phases li.active i { box-shadow: 0 0 0 2px rgba(199,170,105,.1); }
+html[data-theme="skyrim"] .qa-phases li.complete { color: #b8cda8; border-color: #677b5a; background: rgba(103,123,90,.08); }
+html[data-theme="skyrim"] .qa-phases li.failed { color: #df9482; border-color: #955044; background: rgba(149,80,68,.1); }
+
+html[data-theme="skyrim"] .qa-scorecard > div {
+  color: #d8dfda;
+  border-color: #46514c;
+  background: linear-gradient(145deg, rgba(168,193,198,.055), rgba(11,16,14,.88));
+}
+
+html[data-theme="skyrim"] .qa-scorecard span,
+html[data-theme="skyrim"] .qa-scorecard small { color: #979e97; }
+html[data-theme="skyrim"] .qa-scorecard strong { color: #e7e0cf; font-family: var(--display); }
+
+html[data-theme="skyrim"] .qa-rank {
+  border-color: #88764e !important;
+  background: linear-gradient(145deg, rgba(199,170,105,.12), rgba(14,18,17,.9)) !important;
+}
+
+html[data-theme="skyrim"] .qa-rank strong { color: #d7bd79; text-shadow: 0 2px #080a09; }
+html[data-theme="skyrim"] .qa-rank strong[data-rank="s"],
+html[data-theme="skyrim"] .qa-rank strong[data-rank="a"] { color: #bed1af; }
+html[data-theme="skyrim"] .qa-rank strong[data-rank="f"] { color: #df8c79; }
+
+html[data-theme="skyrim"] .qa-evidence-panel {
+  border-color: #4b5550;
+  background: rgba(14,19,17,.5);
+}
+
+html[data-theme="skyrim"] .qa-evidence-panel > header { border-bottom-color: #4c5650; background: rgba(168,193,198,.035); }
+html[data-theme="skyrim"] .qa-evidence-panel > header strong { color: #e2dbca; font-family: var(--display); }
+html[data-theme="skyrim"] .qa-evidence-panel > header span,
+html[data-theme="skyrim"] .qa-evidence-panel > header small { color: #949b94; }
+
+html[data-theme="skyrim"] .qa-console-shell {
+  border-color: #444e49;
+  background: #0d1210;
+  box-shadow: inset 0 0 28px rgba(0,0,0,.28);
+}
+
+html[data-theme="skyrim"] .qa-console-shell > summary {
+  border-bottom-color: #46504b;
+  background: #161c19;
+  font-family: var(--mono);
+}
+
+html[data-theme="skyrim"] .qa-console-shell > summary strong { color: #b9cfd0; }
+html[data-theme="skyrim"] .qa-console-shell > summary small { color: #838b84; }
+
+html[data-theme="skyrim"] .qa-console {
+  color: #c8d3cf;
+  background: linear-gradient(90deg, rgba(168,193,198,.018), transparent), #0a0e0d;
+  font-family: var(--mono);
+}
+
+html[data-theme="skyrim"] .feed-line::before { color: #64716c; }
+html[data-theme="skyrim"] .feed-line:hover { background: rgba(168,193,198,.035); }
+html[data-theme="skyrim"] .feed-stage { color: #d8b99e; border-color: #7d5844; border-left-color: #a46847; background: rgba(164,104,71,.09); }
+html[data-theme="skyrim"] .feed-command { color: #dce6e2; border-left-color: #829b96; background: rgba(168,193,198,.055); }
+html[data-theme="skyrim"] .feed-command::before { color: #a8c1c6; }
+html[data-theme="skyrim"] .feed-success { color: #bcd0ae; }
+html[data-theme="skyrim"] .feed-success::before { color: #91aa7e; }
+html[data-theme="skyrim"] .feed-error { color: #e4a08f; background: rgba(149,80,68,.05); }
+html[data-theme="skyrim"] .feed-error::before { color: #bd6957; }
+html[data-theme="skyrim"] .feed-meta { color: #929a93; }
+html[data-theme="skyrim"] .feed-output { color: #bec9c5; }
+
+html[data-theme="skyrim"] .auto-test {
+  border-color: #414b46;
+  background: rgba(14,19,17,.48);
+}
+
+html[data-theme="skyrim"] .auto-test strong { color: #ddd7c7; }
+html[data-theme="skyrim"] .test-signal { box-shadow: 0 0 0 2px rgba(168,193,198,.05); }
+html[data-theme="skyrim"] .auto-test-passed { color: #b9cdaa; border-left-color: #718663; }
+html[data-theme="skyrim"] .auto-test-failed { color: #df9381; border-left-color: #955044; }
+html[data-theme="skyrim"] .auto-test-skipped { color: #d7bd7b; border-left-color: #9d8550; }
+html[data-theme="skyrim"] .override-audit { color: #d4c18d; border-left-color: #9d8550; background: rgba(199,170,105,.055); }
+html[data-theme="skyrim"] .test-override-controls button { color: #bec9c5; border-color: #4d5852; background: #151b18; }
+html[data-theme="skyrim"] .test-override-controls button:hover { color: #111513; border-color: #c7aa69; background: #c7aa69; box-shadow: none; }
+html[data-theme="skyrim"] .telemetry-empty { color: #d0b779; border-color: #765f3e; background: rgba(199,170,105,.045); }
+
+html[data-theme="skyrim"] .qa-repair-actions {
+  color: #ddd4c2;
+  border-color: #9a5144;
+  background: linear-gradient(90deg, rgba(149,80,68,.13), rgba(199,170,105,.035));
+  box-shadow: inset 4px 0 #9a5144;
+}
+
+html[data-theme="skyrim"] .qa-repair-actions strong { color: #e29583; }
+html[data-theme="skyrim"] .human-test { border-color: #4c5550; background: rgba(14,19,17,.5); }
+
+/* Rune-gate synchronization cinematic */
+html[data-theme="skyrim"] .breach-protocol {
+  color: #e8e3d3;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(168,193,198,.11), transparent 35%),
+    radial-gradient(circle at 50% 50%, rgba(199,170,105,.045), transparent 55%),
+    rgba(5,8,7,.98);
+}
+
+html[data-theme="skyrim"] .breach-protocol::before {
+  opacity: .45;
+  background:
+    repeating-radial-gradient(circle at center, transparent 0 42px, rgba(168,193,198,.035) 43px 44px),
+    linear-gradient(45deg, transparent 49.7%, rgba(199,170,105,.025) 50%, transparent 50.3%);
+  background-size: auto, 64px 64px;
+  animation: skyrim-gate-drift 16s linear infinite;
+}
+
+html[data-theme="skyrim"] .breach-protocol::after {
+  opacity: .32;
+  background: linear-gradient(112deg, transparent 34%, rgba(220,236,235,.045) 49%, transparent 52%);
+  animation: skyrim-frost-sheen 6s ease-in-out infinite;
+}
+
+html[data-theme="skyrim"] .breach-noise {
+  opacity: .18;
+  background: repeating-radial-gradient(circle at 23% 31%, rgba(236,244,242,.08) 0 1px, transparent 1px 15px);
+  background-size: 121px 97px;
+}
+
+html[data-theme="skyrim"] .breach-shell {
+  border: 1px solid #68716b;
+  border-top: 4px double #c7aa69;
+  border-bottom: 4px double #839a96;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.025), transparent 27%),
+    rgba(15,20,18,.96);
+  box-shadow: 0 34px 100px #000, inset 0 0 50px rgba(0,0,0,.2), 0 0 55px rgba(168,193,198,.06);
+  clip-path: polygon(18px 0, calc(100% - 18px) 0, 100% 18px, 100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%, 0 calc(100% - 18px), 0 18px);
+}
+
+html[data-theme="skyrim"] .breach-shell::before,
+html[data-theme="skyrim"] .breach-shell::after {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #c7aa69, transparent);
+  box-shadow: none;
+}
+
+html[data-theme="skyrim"] .breach-header {
+  border-bottom-color: #4d5751;
+  background: linear-gradient(90deg, rgba(199,170,105,.055), transparent);
+}
+
+html[data-theme="skyrim"] .breach-brand-mark {
+  color: #eee6d3;
+  border: 1px solid #a58d5d;
+  border-radius: 50%;
+  background: #222925;
+  clip-path: none;
+  box-shadow: inset 0 0 0 4px #101513, inset 0 0 0 5px #6d6d60;
+  font-family: var(--display);
+}
+
+html[data-theme="skyrim"] .breach-header small { color: #a8c1c6; font-family: var(--mono); }
+
+html[data-theme="skyrim"] .breach-header h2 {
+  color: #e8dfc8;
+  font-family: var(--display);
+  text-shadow: 0 3px #070908;
+}
+
+html[data-theme="skyrim"] .breach-clock { border-left-color: #4f5a54; }
+html[data-theme="skyrim"] .breach-clock i { background: #91aa7e; box-shadow: 0 0 0 3px #32402d; }
+html[data-theme="skyrim"] .breach-clock span,
+html[data-theme="skyrim"] .breach-clock small { color: #929a93; font-family: var(--mono); }
+html[data-theme="skyrim"] .breach-clock strong { color: #d2b872; font-family: var(--mono); }
+
+html[data-theme="skyrim"] .breach-visual {
+  border-right-color: #48524d;
+  background: radial-gradient(circle at 56% 47%, rgba(168,193,198,.055), transparent 35%);
+}
+
+html[data-theme="skyrim"] .terminal-window {
+  border-color: #56625c;
+  background: #0a0f0d;
+  box-shadow: inset 0 0 32px rgba(0,0,0,.38);
+}
+
+html[data-theme="skyrim"] .terminal-bar {
+  border-bottom-color: #49544f;
+  background: #171d1a;
+}
+
+html[data-theme="skyrim"] .terminal-bar strong { color: #c8d9d7; }
+html[data-theme="skyrim"] .terminal-bar small { color: #7f8881; }
+html[data-theme="skyrim"] .console-lights i { box-shadow: none; }
+html[data-theme="skyrim"] .console-lights i:nth-child(1) { background: #9b5144; }
+html[data-theme="skyrim"] .console-lights i:nth-child(2) { background: #b49859; }
+html[data-theme="skyrim"] .console-lights i:nth-child(3) { background: #718a65; }
+
+html[data-theme="skyrim"] .terminal-output {
+  color: #abbab6;
+  background: linear-gradient(90deg, rgba(168,193,198,.022), transparent);
+}
+
+html[data-theme="skyrim"] .terminal-output > div:nth-child(4) { color: #d2b874; }
+html[data-theme="skyrim"] .terminal-output .terminal-line-live { color: #dce7e3; }
+html[data-theme="skyrim"] .terminal-prompt { color: #b8ced0; font-family: var(--mono); }
+html[data-theme="skyrim"] .terminal-prompt b { color: #c7aa69; }
+html[data-theme="skyrim"] .terminal-meter > div { color: #b8cfd0; font-family: var(--mono); }
+html[data-theme="skyrim"] .terminal-meter > div strong { color: #d2b874; }
+html[data-theme="skyrim"] .terminal-meter pre { color: #4b5550; }
+html[data-theme="skyrim"] .terminal-meter > i { background: linear-gradient(90deg, #758e83, #a8c1c6, #c7aa69); box-shadow: none; }
+
+html[data-theme="skyrim"] .breach-orbit {
+  border-color: rgba(168,193,198,.36);
+  box-shadow: inset 0 0 35px rgba(168,193,198,.035);
+  animation: skyrim-rune-turn 18s linear infinite;
+}
+
+html[data-theme="skyrim"] .breach-orbit::before { inset: 21px; border-color: rgba(199,170,105,.3); animation: skyrim-rune-turn 13s linear infinite reverse; }
+html[data-theme="skyrim"] .breach-orbit::after { inset: 50px; border-color: rgba(168,193,198,.42); }
+html[data-theme="skyrim"] .breach-orbit > i { background: #a8c1c6; box-shadow: 0 0 0 2px #40514d; }
+html[data-theme="skyrim"] .breach-orbit > i:nth-child(2) { background: #c7aa69; box-shadow: 0 0 0 2px #5b4c31; }
+html[data-theme="skyrim"] .breach-orbit > i:nth-child(3) { background: #91aa7e; box-shadow: 0 0 0 2px #3d4b35; }
+
+html[data-theme="skyrim"] .breach-core {
+  border-color: #78918d;
+  background: radial-gradient(circle, #24302c, #101614 72%);
+  box-shadow: 0 0 0 5px rgba(168,193,198,.07), inset 0 0 26px rgba(0,0,0,.45);
+}
+
+html[data-theme="skyrim"] .breach-core::before { border-color: rgba(199,170,105,.24); }
+html[data-theme="skyrim"] .breach-core span,
+html[data-theme="skyrim"] .breach-core small { color: #9aa7a2; font-family: var(--mono); }
+html[data-theme="skyrim"] .breach-core strong { color: #d7bf7b; text-shadow: none; }
+
+html[data-theme="skyrim"] .breach-scanline {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #b9d5d6, transparent);
+  box-shadow: 0 0 8px rgba(168,193,198,.38);
+  animation: skyrim-ward-sweep 3.4s ease-in-out infinite;
+}
+
+html[data-theme="skyrim"] #breach-status { color: #dfd8c5; font-family: var(--mono); }
+html[data-theme="skyrim"] #breach-targets span { color: #a5ada6; border-color: #515d57; background: rgba(168,193,198,.04); }
+html[data-theme="skyrim"] .breach-packets { display: none; }
+
+html[data-theme="skyrim"] .breach-operations > header { border-bottom-color: #4a544f; }
+html[data-theme="skyrim"] .breach-operations > header small { color: #b7ced0; font-family: var(--mono); }
+html[data-theme="skyrim"] .breach-operations > header strong { color: #e4dcc8; font-family: var(--display); }
+html[data-theme="skyrim"] #breach-buffer-count { color: #d2b772; }
+
+html[data-theme="skyrim"] .breach-stages li { color: #818a84; border-bottom-color: #343c38; }
+html[data-theme="skyrim"] .breach-stages li::before { background: #4b5550; }
+html[data-theme="skyrim"] .breach-stages li > i { color: #919c96; border-color: #5b6761; border-radius: 50%; clip-path: none; }
+html[data-theme="skyrim"] .breach-stages li strong { font-family: var(--display); }
+html[data-theme="skyrim"] .breach-stages li small { color: #818a83; }
+html[data-theme="skyrim"] .breach-stages li > b { color: #737c76; }
+
+html[data-theme="skyrim"] .breach-stages li.active {
+  color: #d9c184;
+  background: linear-gradient(90deg, rgba(199,170,105,.1), transparent);
+}
+
+html[data-theme="skyrim"] .breach-stages li.active > i { color: #d4bd7c; border-color: #b99e61; box-shadow: 0 0 0 3px rgba(199,170,105,.08); }
+html[data-theme="skyrim"] .breach-stages li.active > b { color: #b7ced0; }
+html[data-theme="skyrim"] .breach-stages li.complete { color: #b7cba8; }
+html[data-theme="skyrim"] .breach-stages li.complete > i { color: #111614; border-color: #718963; background: #91aa7e; }
+html[data-theme="skyrim"] .breach-stages li.complete > b { color: #9eb88d; }
+
+html[data-theme="skyrim"] .breach-console { border-color: #4a5650; background: #0c110f; }
+html[data-theme="skyrim"] .breach-console p { color: #9fa9a4; font-family: var(--mono); }
+html[data-theme="skyrim"] .breach-console p::after { color: #a8c1c6; }
+
+html[data-theme="skyrim"] .breach-footer { border-top-color: #4b5650; background: #101513; }
+html[data-theme="skyrim"] .breach-footer > span,
+html[data-theme="skyrim"] .breach-footer > small { color: #929b94; font-family: var(--mono); }
+html[data-theme="skyrim"] .breach-progress { border-color: #53605a; background: #101513; }
+html[data-theme="skyrim"] .breach-progress i { background: linear-gradient(90deg, #806d49, #c7aa69, #a8c1c6); box-shadow: none; }
+html[data-theme="skyrim"] .breach-progress i::after { background: #e5f0ed; box-shadow: 0 0 8px rgba(168,193,198,.36); }
+
+html[data-theme="skyrim"] .breach-protocol.success .breach-core { border-color: #91aa7e; box-shadow: 0 0 0 5px rgba(145,170,126,.11); }
+html[data-theme="skyrim"] .breach-protocol.success .breach-core strong,
+html[data-theme="skyrim"] .breach-protocol.success #breach-status { color: #bdd1ad; }
+html[data-theme="skyrim"] .breach-protocol.failed .breach-core { border-color: #bd6957; box-shadow: 0 0 0 5px rgba(189,105,87,.11); }
+html[data-theme="skyrim"] .breach-protocol.failed .breach-core strong,
+html[data-theme="skyrim"] .breach-protocol.failed #breach-status { color: #e09784; }
+
+/* Frost-gate sign-out */
+html[data-theme="skyrim"] .jackout-sequence {
+  color: #e8e3d3;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(168,193,198,.14), transparent 28%),
+    rgba(5,8,7,.98);
+}
+
+html[data-theme="skyrim"] .jackout-sequence::before {
+  opacity: .32;
+  background: repeating-radial-gradient(circle at center, transparent 0 47px, rgba(168,193,198,.045) 48px 49px);
+  animation: skyrim-frost-close 2.2s ease-in forwards;
+}
+
+html[data-theme="skyrim"] .jackout-grid {
+  background:
+    linear-gradient(45deg, transparent 49.7%, rgba(199,170,105,.035) 50%, transparent 50.3%),
+    linear-gradient(-45deg, transparent 49.7%, rgba(168,193,198,.035) 50%, transparent 50.3%);
+  background-size: 58px 58px;
+  animation: skyrim-gate-fade 1.8s ease-in forwards;
+}
+
+html[data-theme="skyrim"] .jackout-sigil {
+  color: #ebe4d1;
+  border: 3px double #9d8758;
+  border-radius: 50%;
+  background: #212824;
+  box-shadow: inset 0 0 0 5px #0d1210, 0 0 24px rgba(168,193,198,.1);
+  font-family: var(--display);
+}
+
+html[data-theme="skyrim"] .jackout-core h2 {
+  color: #eadfca;
+  font-family: var(--display);
+  text-shadow: 0 3px #050706;
+}
+
+html[data-theme="skyrim"] .jackout-core p:last-child { color: #9da49d; font-family: var(--mono); }
+html[data-theme="skyrim"] .jackout-progress { border-color: #59645e; background: #101513; }
+html[data-theme="skyrim"] .jackout-progress i { background: linear-gradient(90deg, #a8c1c6, #c7aa69, #91aa7e); box-shadow: none; }
+html[data-theme="skyrim"] .jackout-sequence.complete .jackout-sigil { color: #141914; background: #9fb58d; }
+html[data-theme="skyrim"] .jackout-sequence.complete .jackout-core h2 { color: #bed1ae; text-shadow: none; }
+html[data-theme="skyrim"] .jacking-out > :not(.jackout-sequence) { animation: skyrim-page-freeze .85s ease-in forwards; }
+
+/* Footer */
+html[data-theme="skyrim"] .gh-footer {
+  color: #858d87;
+  border-top: 3px double #414943;
+  background: linear-gradient(180deg, rgba(168,193,198,.02), transparent);
+  font-family: var(--display);
+  letter-spacing: .045em;
+}
+
+html[data-theme="skyrim"] .footer-sigil { color: #c7aa69; }
+
+@keyframes skyrim-mist-drift {
+  from { transform: translate3d(-2vw, 1vh, 0) scale(.96); }
+  to { transform: translate3d(10vw, -6vh, 0) scale(1.12); }
+}
+
+@keyframes skyrim-rune-spark {
+  to { width: 58px; height: 58px; opacity: 0; transform: translate(-50%, -50%) rotate(35deg); }
+}
+
+@keyframes skyrim-ember-pulse {
+  50% { opacity: .58; box-shadow: 0 0 0 3px #293834, 0 0 11px rgba(168,193,198,.5); }
+}
+
+@keyframes skyrim-chevron-breathe { 50% { transform: translateX(3px); opacity: .68; } }
+@keyframes skyrim-rune-turn { to { transform: rotate(360deg); } }
+@keyframes skyrim-gate-drift { to { background-position: 0 0, 64px 64px; } }
+@keyframes skyrim-frost-sheen { 50% { transform: translateX(5%); opacity: .48; } }
+@keyframes skyrim-ward-sweep { 0%, 100% { transform: translateY(-65px); opacity: .2; } 50% { transform: translateY(65px); opacity: .85; } }
+@keyframes skyrim-frost-close { to { transform: scale(1.22); opacity: .08; filter: blur(2px); } }
+@keyframes skyrim-gate-fade { to { transform: scale(.96); opacity: .08; } }
+@keyframes skyrim-page-freeze { to { opacity: 0; filter: grayscale(.8) blur(1px); } }
+
+@media (max-width: 980px) {
+  html[data-theme="skyrim"] .launch-card,
+  html[data-theme="skyrim"] .lab-layout > .gh-box + .gh-box,
+  html[data-theme="skyrim"] .mission-main {
+    border-left: 1px solid #4e5752 !important;
+    border-top: 3px double #a88e57 !important;
+  }
+}
+
+@media (max-width: 720px) {
+  html[data-theme="skyrim"] .gh-box,
+  html[data-theme="skyrim"] .hud { border-left-width: 1px; }
+  html[data-theme="skyrim"] .testing-hero { min-height: 0; padding: 25px 22px; }
+  html[data-theme="skyrim"] .scanner-orb { width: 108px; height: 108px; }
+  html[data-theme="skyrim"] .scanner-orb::before { inset: 22px; font-size: 24px; }
+  html[data-theme="skyrim"] .shell::before { display: none; }
+}
+
+@media (max-width: 620px) {
+  html[data-theme="skyrim"] .hud-stats article { border-bottom-color: #3d4541; }
+  html[data-theme="skyrim"] .identity-bank { border-top-color: #434c47; }
+  html[data-theme="skyrim"] .fund-card { border-left-width: 2px; }
+  html[data-theme="skyrim"] .testing-hero { display: block; }
+  html[data-theme="skyrim"] .scanner-orb { margin: 22px auto 0; }
+  html[data-theme="skyrim"] .breach-shell { clip-path: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="skyrim"] .ambient-orb,
+  html[data-theme="skyrim"] .scanner-orb::before,
+  html[data-theme="skyrim"] .scanner-orb i,
+  html[data-theme="skyrim"] .breach-orbit,
+  html[data-theme="skyrim"] .breach-orbit::before,
+  html[data-theme="skyrim"] .breach-scanline,
+  html[data-theme="skyrim"] .breach-protocol::before,
+  html[data-theme="skyrim"] .breach-protocol::after,
+  html[data-theme="skyrim"] .jackout-sequence::before,
+  html[data-theme="skyrim"] .jackout-grid,
+  html[data-theme="skyrim"] .btn-launch b,
+  html[data-theme="skyrim"] .pulse-dot { animation: none !important; }
+
+  html[data-theme="skyrim"] .cursor-glow,
+  html[data-theme="skyrim"] .click-spark { display: none !important; }
+
+  html[data-theme="skyrim"] .issue-row:hover,
+  html[data-theme="skyrim"] .strategy:hover,
+  html[data-theme="skyrim"] .btn:hover,
+  html[data-theme="skyrim"] button:hover,
+  html[data-theme="skyrim"] .btn-launch:hover,
+  html[data-theme="skyrim"] .tabnav a:hover,
+  html[data-theme="skyrim"] .cred-node.unlocked:hover { transform: none; }
+}
+/* ---- Sync scene: courier writing an ancient scroll ---- */
+html[data-theme="skyrim"] .sync-scroll { width:100%; max-width:440px; padding:12px 22px 18px; perspective:900px; }
+html[data-theme="skyrim"] .ancient-scroll { position:relative; padding:15px 0; filter:drop-shadow(0 15px 18px rgba(0,0,0,.58)); animation:scroll-arrive .9s cubic-bezier(.2,.8,.25,1) both; }
+html[data-theme="skyrim"] .scroll-parchment { position:relative; min-height:290px; padding:35px 48px 42px; overflow:hidden; color:#382716; border:1px solid #8f7042; background:radial-gradient(circle at 24% 20%,rgba(255,246,194,.54),transparent 25%),repeating-linear-gradient(0deg,rgba(83,52,20,.028) 0 1px,transparent 1px 5px),linear-gradient(100deg,#a8844e 0,#dbc88e 7%,#eadba8 50%,#d2b87b 94%,#8d6c3e 100%); box-shadow:inset 15px 0 22px rgba(79,46,16,.2),inset -15px 0 22px rgba(79,46,16,.2); transform-origin:top; animation:scroll-unfurl 1.15s .15s cubic-bezier(.3,.75,.25,1) both; }
+html[data-theme="skyrim"] .scroll-parchment::after { content:""; position:absolute; inset:0; pointer-events:none; opacity:.24; background:radial-gradient(ellipse at 12% 14%,#71451f 0 1px,transparent 3px),radial-gradient(ellipse at 81% 74%,#71451f 0 1px,transparent 4px),linear-gradient(90deg,rgba(70,39,14,.3),transparent 8% 92%,rgba(70,39,14,.3)); }
+html[data-theme="skyrim"] .scroll-roller { position:absolute; z-index:3; left:-12px; right:-12px; height:20px; border:1px solid #533b21; border-radius:50%; background:linear-gradient(#6c4c27,#b38b50 40%,#5a3b1e 72%,#2f2115); box-shadow:0 5px 8px rgba(0,0,0,.45); }
+html[data-theme="skyrim"] .scroll-roller::before,html[data-theme="skyrim"] .scroll-roller::after { content:""; position:absolute; top:3px; width:24px; height:12px; border-radius:50%; background:radial-gradient(circle,#d0ad69 0 20%,#644523 24% 58%,#302116 62%); }
+html[data-theme="skyrim"] .scroll-roller::before { left:-13px; } html[data-theme="skyrim"] .scroll-roller::after { right:-13px; }
+html[data-theme="skyrim"] .scroll-roller-top { top:5px; } html[data-theme="skyrim"] .scroll-roller-bottom { bottom:5px; }
+html[data-theme="skyrim"] .scroll-rune { position:absolute; top:26px; left:28px; color:#7f2520; font:24px Georgia,serif; }
+html[data-theme="skyrim"] .scroll-parchment > small { display:block; color:#76552c; font:700 8px var(--mono); letter-spacing:.24em; text-align:center; }
+html[data-theme="skyrim"] .scroll-parchment > strong { display:block; margin:4px 0 17px; color:#3e2915; font:700 25px var(--display); letter-spacing:.04em; text-align:center; border-bottom:1px solid rgba(81,50,20,.35); }
+html[data-theme="skyrim"] .scroll-script { position:relative; z-index:1; display:grid; gap:7px; min-height:130px; max-height:145px; overflow:hidden; }
+html[data-theme="skyrim"] .scroll-script > div { width:max-content; max-width:100%; overflow:hidden; color:#49331d; font:600 12px/1.45 Alegreya,Georgia,serif; white-space:nowrap; border-right:1px solid #4b2f17; animation:ink-write 1.3s steps(38,end) both,ink-caret .55s step-end 3; }
+html[data-theme="skyrim"] .scroll-script > div::before { content:"✦ "; color:#8c3428; }
+html[data-theme="skyrim"] .scroll-quill { position:absolute; z-index:4; right:21px; top:115px; font-size:54px; line-height:1; filter:sepia(.6) drop-shadow(3px 5px 3px rgba(50,29,10,.35)); transform:rotate(-32deg); transform-origin:82% 82%; animation:quill-writing 2.4s ease-in-out infinite; }
+html[data-theme="skyrim"] .scroll-quill::after { content:""; position:absolute; right:4px; bottom:5px; width:8px; height:4px; border-radius:50%; background:#271a12; box-shadow:0 0 7px #21140c; }
+html[data-theme="skyrim"] .scroll-seal { position:absolute; right:43px; bottom:26px; display:grid; place-items:center; width:38px; height:38px; color:#d1aa72; border:2px double #6f1818; border-radius:50%; background:radial-gradient(circle,#9c3028,#601616); box-shadow:0 3px 4px rgba(55,24,12,.42); font:700 10px var(--display); transform:rotate(-8deg) scale(0); animation:seal-press .55s 4.7s ease-out forwards; }
+html[data-theme="skyrim"] .breach-protocol.success .scroll-seal { animation:seal-press .55s ease-out forwards; }
+@keyframes scroll-arrive { from { opacity:0; transform:translateY(-24px) rotateX(12deg); } }
+@keyframes scroll-unfurl { from { min-height:36px; transform:scaleY(.12); filter:brightness(.65); } to { min-height:290px; transform:scaleY(1); filter:brightness(1); } }
+@keyframes ink-write { from { width:0; } to { width:100%; } }
+@keyframes ink-caret { 50% { border-color:transparent; } }
+@keyframes quill-writing { 0%,100% { transform:translate(0,0) rotate(-32deg); } 18% { transform:translate(-42px,9px) rotate(-28deg); } 36% { transform:translate(-7px,19px) rotate(-34deg); } 54% { transform:translate(-48px,29px) rotate(-27deg); } 72% { transform:translate(-10px,40px) rotate(-33deg); } 88% { transform:translate(-35px,49px) rotate(-29deg); } }
+@keyframes seal-press { 0% { transform:rotate(-8deg) scale(1.7); opacity:0; } 70% { transform:rotate(-8deg) scale(.88); opacity:1; } 100% { transform:rotate(-8deg) scale(1); opacity:1; } }
+@media (prefers-reduced-motion:reduce) { html[data-theme="skyrim"] .ancient-scroll,html[data-theme="skyrim"] .scroll-parchment,html[data-theme="skyrim"] .scroll-script > div,html[data-theme="skyrim"] .scroll-quill { animation:none; } }
+
+/* Material detail and hand-written motion pass. */
+html[data-theme="skyrim"] .sync-scroll {
+  position: relative;
+  isolation: isolate;
+  filter: saturate(.9);
+}
+
+html[data-theme="skyrim"] .sync-scroll::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -22px -34px;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 82% 34%, rgba(236,173,82,.17), transparent 44%);
+  animation: scroll-firelight 3.8s ease-in-out infinite alternate;
+}
+
+html[data-theme="skyrim"] .scroll-atmosphere { position:absolute; z-index:5; inset:0; overflow:hidden; pointer-events:none; }
+html[data-theme="skyrim"] .scroll-atmosphere i { position:absolute; left:var(--dust-x,18%); bottom:-5px; width:2px; height:2px; border-radius:50%; background:#f0d8a2; box-shadow:0 0 5px #e9c078; opacity:0; animation:scroll-dust 6.5s linear infinite; }
+html[data-theme="skyrim"] .scroll-atmosphere i:nth-child(2) { --dust-x:36%; animation-delay:-1.2s; animation-duration:7.8s; }
+html[data-theme="skyrim"] .scroll-atmosphere i:nth-child(3) { --dust-x:57%; animation-delay:-4.7s; animation-duration:8.6s; }
+html[data-theme="skyrim"] .scroll-atmosphere i:nth-child(4) { --dust-x:76%; animation-delay:-2.8s; animation-duration:7.1s; }
+html[data-theme="skyrim"] .scroll-atmosphere i:nth-child(5) { --dust-x:91%; animation-delay:-5.5s; animation-duration:9.2s; }
+
+html[data-theme="skyrim"] .scroll-parchment {
+  clip-path: polygon(1.2% 0,7% .9%,13% .2%,20% 1%,27% .35%,35% .9%,43% .15%,52% .85%,61% .2%,70% .8%,79% .1%,88% .9%,98.7% 0,99.5% 10%,98.8% 20%,99.6% 31%,98.9% 43%,99.5% 55%,98.7% 68%,99.6% 81%,98.8% 91%,99.3% 100%,91% 99.2%,83% 99.8%,74% 99.1%,65% 99.7%,55% 99%,45% 99.8%,35% 99.1%,25% 99.8%,14% 99%,1% 100%,.5% 90%,1.3% 79%,.4% 67%,1.1% 54%,.5% 42%,1.3% 30%,.4% 18%);
+}
+
+html[data-theme="skyrim"] .scroll-parchment::before {
+  content:"";
+  position:absolute;
+  z-index:0;
+  inset:7px 10px;
+  pointer-events:none;
+  border:1px solid rgba(95,58,25,.2);
+  box-shadow:inset 0 0 0 2px rgba(246,226,161,.16), inset 0 0 38px rgba(73,40,13,.11);
+}
+
+html[data-theme="skyrim"] .scroll-roller { transform:rotate(-.35deg); }
+html[data-theme="skyrim"] .scroll-roller-bottom { transform:rotate(.5deg); box-shadow:0 -3px 8px rgba(0,0,0,.42); }
+html[data-theme="skyrim"] .scroll-roller-top::before,html[data-theme="skyrim"] .scroll-roller-top::after { transform:rotate(2deg); }
+
+html[data-theme="skyrim"] .scroll-script > div { position:relative; opacity:.92; text-shadow:0 .25px rgba(31,17,8,.4); border-right:0; transform-origin:left center; animation:ink-reveal 1.35s cubic-bezier(.25,.7,.25,1) both; }
+html[data-theme="skyrim"] .scroll-script > div:nth-child(1) { animation-delay:.35s; }
+html[data-theme="skyrim"] .scroll-script > div:nth-child(2) { animation-delay:.82s; }
+html[data-theme="skyrim"] .scroll-script > div:nth-child(3) { animation-delay:1.29s; }
+html[data-theme="skyrim"] .scroll-script > div:nth-child(4) { animation-delay:1.76s; }
+html[data-theme="skyrim"] .scroll-script > div:nth-child(n+5) { animation-delay:0s; }
+html[data-theme="skyrim"] .scroll-script > div::after { content:""; position:absolute; left:0; right:0; bottom:0; height:1px; opacity:.16; background:linear-gradient(90deg,#29170d,transparent); transform-origin:left; animation:ink-dry 2.4s ease-out both; }
+
+html[data-theme="skyrim"] .scroll-quill {
+  right:25px;
+  top:91px;
+  width:82px;
+  height:132px;
+  font-size:0;
+  filter:drop-shadow(4px 7px 4px rgba(46,25,9,.32));
+  transform:rotate(8deg);
+  transform-origin:28% 93%;
+  will-change:transform;
+  animation:quill-script 3.1s cubic-bezier(.46,.03,.4,.96) infinite;
+}
+
+html[data-theme="skyrim"] .scroll-quill svg { display:block; width:100%; height:100%; overflow:visible; }
+html[data-theme="skyrim"] .scroll-quill::after { display:none; }
+html[data-theme="skyrim"] .quill-feather { transform-origin:55px 115px; animation:feather-flex 1.55s ease-in-out infinite alternate; }
+html[data-theme="skyrim"] .quill-ink { position:absolute; left:11px; bottom:0; width:5px; height:3px; border-radius:50%; background:#21150e; filter:blur(.3px); box-shadow:0 0 4px rgba(25,13,7,.7); opacity:.8; animation:ink-glint 1.1s ease-in-out infinite; }
+
+html[data-theme="skyrim"] .scroll-parchment.is-writing .scroll-quill { animation-duration:1.45s; }
+html[data-theme="skyrim"] .scroll-parchment.is-writing .quill-ink { box-shadow:-18px 1px 2px -1px rgba(37,21,12,.56),-34px 2px 2px -1px rgba(37,21,12,.38); }
+
+html[data-theme="skyrim"] .scroll-inkpot { position:absolute; z-index:3; right:16px; bottom:19px; width:40px; height:29px; border:1px solid #211711; border-radius:7px 7px 12px 12px; background:linear-gradient(120deg,#241d19,#766047 38%,#211a17 68%,#0d0b0b); box-shadow:0 6px 5px rgba(58,31,12,.3), inset 5px 2px 5px rgba(255,231,175,.15); transform:skewX(-2deg); }
+html[data-theme="skyrim"] .scroll-inkpot::before { content:""; position:absolute; left:7px; right:7px; top:-7px; height:10px; border:2px solid #2b2119; border-radius:50%; background:radial-gradient(ellipse,#080708 0 43%,#66503a 47% 62%,#1d1714 66%); }
+html[data-theme="skyrim"] .scroll-inkpot::after { content:""; position:absolute; left:9px; right:9px; bottom:-4px; height:5px; border-radius:50%; background:rgba(46,24,11,.22); filter:blur(2px); }
+
+html[data-theme="skyrim"] .scroll-seal { right:68px; bottom:21px; opacity:0; animation:none; }
+html[data-theme="skyrim"] .breach-protocol.success .scroll-seal { animation:seal-press .68s cubic-bezier(.18,.9,.22,1.2) forwards; }
+html[data-theme="skyrim"] .breach-protocol.success .scroll-quill { animation:quill-rest .75s ease forwards; }
+
+@keyframes scroll-firelight { 0% { opacity:.55; transform:translateX(-2px) scale(.98); } 35% { opacity:.82; } 68% { opacity:.62; transform:translateX(3px) scale(1.015); } 100% { opacity:.9; transform:translateX(1px) scale(1.03); } }
+@keyframes scroll-dust { 0% { opacity:0; transform:translate(0,0) scale(.6); } 18% { opacity:.62; } 68% { opacity:.3; } 100% { opacity:0; transform:translate(22px,-310px) scale(1.25); } }
+@keyframes ink-reveal { 0% { clip-path:inset(0 100% 0 0); opacity:.15; filter:blur(.7px); } 76% { opacity:1; filter:blur(0); } 100% { clip-path:inset(0 0 0 0); opacity:.88; } }
+@keyframes ink-dry { from { opacity:.38; filter:blur(1px); } to { opacity:.08; filter:blur(0); } }
+@keyframes quill-script { 0% { transform:translate(1px,0) rotate(8deg); } 12% { transform:translate(-20px,3px) rotate(5deg); } 24% { transform:translate(-44px,5px) rotate(7deg); } 34% { transform:translate(-13px,15px) rotate(3deg); } 47% { transform:translate(-38px,18px) rotate(7deg); } 59% { transform:translate(-57px,20px) rotate(5deg); } 68% { transform:translate(-10px,31px) rotate(2deg); } 82% { transform:translate(-43px,34px) rotate(6deg); } 92% { transform:translate(-60px,36px) rotate(4deg); } 100% { transform:translate(1px,0) rotate(8deg); } }
+@keyframes feather-flex { from { transform:rotate(-1.4deg) skewX(-.8deg); } to { transform:rotate(1.2deg) skewX(.5deg); } }
+@keyframes ink-glint { 50% { opacity:.5; transform:scale(.75); } }
+@keyframes quill-rest { to { transform:translate(30px,90px) rotate(24deg); opacity:.82; } }
+
+@media (max-width:620px) {
+  html[data-theme="skyrim"] .sync-scroll { padding-inline:6px; }
+  html[data-theme="skyrim"] .scroll-parchment { padding-inline:32px; }
+  html[data-theme="skyrim"] .scroll-quill { right:13px; transform:scale(.84) rotate(8deg); }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  html[data-theme="skyrim"] .sync-scroll::before,
+  html[data-theme="skyrim"] .scroll-atmosphere i,
+  html[data-theme="skyrim"] .quill-feather,
+  html[data-theme="skyrim"] .quill-ink { animation:none !important; }
+}

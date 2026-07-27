@@ -1,42 +1,321 @@
 {% extends "base.html" %}
-{% block title %}Testing lab · Neon Ops{% endblock %}
+{% block title %}{{ theme_dialect.testing_title }}{% endblock %}
 {% block content %}
-<section class="lab-head testing-hero"><div><p class="eyebrow">BLACKWALL // AUTONOMOUS QA GRID</p><h1>Integrity scanner</h1><p>Lock onto a ticket and pull the latest automated test telemetry from its workflow run. No manual checkbox ritual—just machine evidence.</p></div><div class="scanner-orb" aria-hidden="true"><i></i><span>LIVE</span></div></section>
+<section class="lab-head testing-hero"><div><p class="eyebrow">{{ theme_dialect.testing_eyebrow }}</p><h1>{{ theme_dialect.testing_heading }}</h1><p>{{ theme_dialect.testing_intro }}</p></div><div class="scanner-orb" aria-hidden="true"><i></i><span>{{ 'ON AIR' if is_wwii else ('WARD' if is_skyrim else 'LIVE') }}</span></div></section>
 
 <section class="gh-box testing-target">
-  <header class="gh-box-header"><strong>Target uplink</strong><span class="board-hint">ENCRYPTED GITHUB COORDINATES</span></header>
+  <header class="gh-box-header"><strong>{{ theme_dialect.testing_target }}</strong><span class="board-hint">PR-ATTACHED TICKETS ONLY</span></header>
   <div class="form-body testing-load-row">
-    <label>Ticket URL<input id="testing-issue-url" type="url" placeholder="https://github.com/owner/repository/issues/123"></label>
-    <label>QA daemon<select id="testing-provider"><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label>
-    <button id="generate-tests" class="btn btn-primary scan-trigger" type="button" onclick="runAutomatedTests()">Run autonomous QA</button>
+    <label class="testing-ticket-picker">Find a ticket
+      <input id="testing-ticket-search" type="search" placeholder="Try crm-staff-desktop 996, #996, or paste a GitHub URL" autocomplete="off">
+      <small id="testing-search-help">Search by repository, ticket number, or title. Tickets outside the ready queue can still be loaded directly.</small>
+      <select id="testing-issue-url">
+      <option value="">Choose an In Progress, PR Ready, or Ready to Build ticket</option>
+      {% for ticket in tickets %}<option value="{{ ticket.url }}" data-number="{{ ticket.number }}" data-title="{{ ticket.title }}" data-status="{{ ticket.project_status }}" data-repository="{{ ticket.repository }}">#{{ ticket.number }} · {{ ticket.title }} · {{ ticket.project_status }}</option>{% endfor %}
+      </select>
+    </label><a id="open-selected-testing-ticket" class="btn btn-compact" href="#" target="_blank" rel="noopener" hidden>Open in GitHub ↗</a>
+    <label class="testing-manual-url">Ticket URL<input id="testing-manual-issue-url" type="url" placeholder="Optional GitHub issue URL"></label>
+    <div class="pipeline-gauge" id="testing-pipeline-gauge" aria-label="{{ theme_dialect.testing_agent }} fixed escalation pipeline">
+      <small class="pipeline-gauge-label">{{ theme_dialect.testing_agent }} // fixed pipeline, not user-selectable</small>
+      <ol class="pipeline-gauge-bar">
+        <li data-tier="claude-haiku-4-5"><span>Haiku</span></li>
+        <li data-tier="claude-sonnet-5"><span>Sonnet</span></li>
+        <li data-tier="gpt-5.6-luna"><span>Luna</span></li>
+        <li data-tier="claude-opus-4-7"><span>Opus</span></li>
+        <li data-tier="gpt-5.6-sol"><span>Sol Low</span></li>
+        <li data-tier="gpt-5.6-sol-high"><span>Sol High</span></li>
+      </ol>
+    </div>
+    <button id="generate-tests" class="btn btn-primary scan-trigger" type="button" onclick="runAutomatedTests()">{{ theme_dialect.testing_run }}</button>
+    <aside id="testing-mission" class="testing-mission">
+      <span class="mission-icon">◎</span><div><strong>{{ theme_dialect.testing_waiting }}</strong><small>Select a ticket to load its evidence mission.</small></div>
+    </aside>
   </div>
 </section>
 
 <section id="testing-workspace" class="gh-box testing-workspace" hidden>
-  <header class="gh-box-header"><strong id="testing-ticket-title">Integrity feed</strong><div class="testing-ticket-actions"><span id="testing-ticket-meta" class="board-hint"></span><a id="open-testing-ticket" class="btn btn-compact" href="#" target="_blank" rel="noopener" hidden>Open ticket ↗</a></div></header>
+  <header class="gh-box-header"><strong id="testing-ticket-title">{{ theme_dialect.testing_control }}</strong><div class="testing-ticket-actions"><span id="testing-ticket-meta" class="board-hint">EVIDENCE-FIRST VERIFICATION</span><span id="testing-mode-badge" class="board-hint" hidden style="background: var(--color-info, #0066cc);">✓ TESTING</span><a id="open-testing-ticket" class="btn btn-compact" href="#" target="_blank" rel="noopener" hidden>Open ticket ↗</a></div></header>
   <div class="form-body">
+    <aside id="testing-context" class="testing-mission" hidden>
+      <span class="mission-icon">📋</span><div>
+        <strong id="testing-what"></strong>
+        <small id="testing-details"></small>
+      </div>
+    </aside>
     <div id="test-job-state" class="test-job-state"></div>
-    <section class="qa-console-shell">
-      <header><span class="console-lights"><i></i><i></i><i></i></span><strong>LIVE DAEMON TRACE</strong><small>READ-ONLY TELEMETRY</small></header>
-      <div id="qa-console" class="qa-console" aria-live="polite"><div class="feed-line feed-meta">BOOTING QA TELEMETRY…</div></div>
+    <section id="qa-run-details" class="qa-run-details" aria-label="QA run details">
+      <div><span>RUN STATUS</span><strong id="qa-run-status">Preparing</strong></div>
+      <div><span>ELAPSED</span><strong id="qa-run-elapsed">00:00</strong></div>
+      <div><span>LAST ACTIVITY</span><strong id="qa-last-activity">Waiting for telemetry</strong></div>
+      <div class="qa-run-control"><span>CONTROL</span><button id="qa-stop-button" type="button" onclick="stopCurrentQaRun()">Stop run</button></div>
     </section>
-    <div id="test-checklist" class="test-checklist"></div>
-    <div id="qa-repair-actions" class="qa-repair-actions" hidden><div><strong>BLACK ICE BREACH DETECTED</strong><span>Repair locally, prove every check, then update the linked open PR.</span></div><button id="qa-fix-button" class="btn btn-primary" type="button" onclick="fixAndRetest()">Fix + retest to 100%</button></div>
-    <div class="testing-submit-row"><span id="testing-status" class="sync-status" role="status"></span><span class="board-hint">AUTO-UPLINK // REPORT POSTS ON COMPLETION</span></div>
+    <ol id="qa-phases" class="qa-phases">
+      <li data-phase="analyse"><i>01</i><span>Analyse {{ theme_dialect.mission }}<small>Extract requirements</small></span></li>
+      <li data-phase="trace"><i>02</i><span>Trace change<small>Locate implementation</small></span></li>
+      <li data-phase="test"><i>03</i><span>Execute tests<small>Collect machine proof</small></span></li>
+      <li data-phase="verify"><i>04</i><span>Verify evidence<small>Score integrity</small></span></li>
+    </ol>
+    <section id="qa-scorecard" class="qa-scorecard" hidden>
+      <div class="qa-rank"><span>{{ theme_dialect.testing_grade }}</span><strong id="qa-rank-value">--</strong><small id="qa-integrity-value">Integrity calculating</small></div>
+      <div class="qa-verdict"><span>VERDICT</span><strong id="qa-verdict-value">VERIFYING</strong><small id="qa-summary">Collecting machine evidence…</small></div>
+      <div><span>PASS</span><strong id="qa-pass-count">0</strong></div>
+      <div><span>FAIL</span><strong id="qa-fail-count">0</strong></div>
+      <div><span>SKIP</span><strong id="qa-skip-count">0</strong></div>
+    </section>
+    <div class="qa-split-grid">
+      <section class="qa-evidence-panel">
+        <header><div><span>{{ 'REQUIREMENT LEDGER' if is_wwii else 'REQUIREMENT MATRIX' }}</span><strong>Machine-verified evidence</strong></div><small id="qa-coverage-label">{{ 'AWAITING REPORT' if is_wwii else 'AWAITING SIGNAL' }}</small></header>
+        <div id="test-checklist" class="test-checklist"><div class="telemetry-empty"><strong>NO EVIDENCE YET</strong><span>The verification engine will map focused checks to the ticket requirements.</span></div></div>
+      </section>
+      <details class="qa-console-shell" open>
+        <summary><span class="console-lights"><i></i><i></i><i></i></span><strong>{{ theme_dialect.testing_wire }}</strong><small>TECHNICAL TRACE · CLICK TO COLLAPSE</small></summary>
+        <div id="qa-console" class="qa-console" aria-live="polite"><div class="feed-line feed-meta">OPENING EVIDENCE CHANNEL…</div></div>
+      </details>
+    </div>
+    <div id="qa-repair-actions" class="qa-repair-actions" hidden><div><strong>VERIFICATION FAILURE DETECTED</strong><span>Repair locally, prove every check, then update the linked open PR.</span></div><button id="qa-fix-button" class="btn btn-primary" type="button" onclick="fixAndRetest()">Fix + retest to 100%</button></div>
+    <div class="testing-submit-row"><span id="testing-status" class="sync-status" role="status"></span><span class="board-hint">{{ 'AUTO-DISPATCH' if is_wwii else 'AUTO-UPLINK' }} // REPORT POSTS ON COMPLETION</span></div>
   </div>
 </section>
 
 <script>
+const DIALECT = {{ theme_dialect|tojson }};
 let currentTestPlan = null;
+let currentQaJobId = null;
+let qaRunStartedAt = null;
+let qaLastLogSignature = '';
+let qaLastActivityAt = null;
+let qaLogCursor = 0;
+let qaRawLog = '';
+const knownTestingRepositories = {{ repositories|tojson }};
+const knownTicketReferences = {{ ticket_references|tojson }};
 const escapeTestHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
+function resolveTicketSearch() {
+  const input = document.getElementById('testing-ticket-search');
+  const select = document.getElementById('testing-issue-url');
+  const manual = document.getElementById('testing-manual-issue-url');
+  const help = document.getElementById('testing-search-help');
+  const query = input.value.trim();
+  if (!query) return select.value || manual.value;
+
+  if (/^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+(?:[/?#].*)?$/i.test(query)) {
+    select.value = '';
+    manual.value = query.split(/[?#]/)[0];
+    help.textContent = 'Direct GitHub ticket locked.';
+    updateSelectedTicketLink();
+    return manual.value;
+  }
+
+  // Project board card links (e.g. copied from a Projects v2 view) encode the
+  // target as ?...&issue=owner%7Crepo%7Cnumber instead of a /issues/N path.
+  const projectCardMatch = /^https:\/\/github\.com\/orgs\/[^/]+\/projects\/\d+\/views\/\d+/i.test(query)
+    && query.match(/[?&]issue=([^&]+)/i);
+  if (projectCardMatch) {
+    const [owner, repo, number] = decodeURIComponent(projectCardMatch[1]).split('|');
+    if (owner && repo && /^\d+$/.test(number)) {
+      select.value = '';
+      manual.value = `https://github.com/${owner}/${repo}/issues/${number}`;
+      help.textContent = `Resolved project board link to ${owner}/${repo} #${number}.`;
+      updateSelectedTicketLink();
+      return manual.value;
+    }
+  }
+
+  const normalized = query.toLowerCase().replace(/^#/, '');
+  const options = [...select.options].slice(1);
+  const exact = options.filter(option => {
+    const numberMatches = String(option.dataset.number) === normalized.match(/\d+/)?.[0];
+    const repoMatches = !normalized.replace(/#?\d+.*/, '').trim() || option.dataset.repository.toLowerCase().includes(normalized.replace(/#?\d+.*/, '').trim());
+    return numberMatches && repoMatches;
+  });
+  if (exact.length === 1) {
+    select.value = exact[0].value;
+    manual.value = '';
+    help.textContent = `Matched ${exact[0].dataset.repository} #${exact[0].dataset.number}.`;
+    updateSelectedTicketLink();
+    return select.value;
+  }
+
+  const numberMatch = query.match(/#?(\d+)\s*$/);
+  if (numberMatch) {
+    const repoQuery = query.slice(0, numberMatch.index).trim().toLowerCase().replace(/\s+#?$/, '');
+    const indexedTickets = knownTicketReferences.filter(ticket => {
+      const repository = ticket.repository.toLowerCase();
+      return String(ticket.number) === numberMatch[1] && (!repoQuery || repository === repoQuery || repository.endsWith(`/${repoQuery}`) || repository.includes(repoQuery));
+    });
+    if (indexedTickets.length === 1) {
+      select.value = '';
+      manual.value = indexedTickets[0].url;
+      help.textContent = `Found ${indexedTickets[0].repository} #${indexedTickets[0].number} in the ticket index.`;
+      updateSelectedTicketLink();
+      return manual.value;
+    }
+    const repositories = knownTestingRepositories.filter(repository => {
+      const lower = repository.toLowerCase();
+      return repoQuery && (lower === repoQuery || lower.endsWith(`/${repoQuery}`) || lower.includes(repoQuery));
+    });
+    if (repositories.length === 1) {
+      // A repo+number match here is a guess, not a confirmed ticket: nothing
+      // above has verified this number actually exists in that repository.
+      // Blindly handing an unverified URL to the agent used to fail silently
+      // (404 against a nonexistent issue) with no clear signal why.
+      select.value = '';
+      help.textContent = `Checking GitHub for ${repositories[0]} #${numberMatch[1]}…`;
+      verifyTicketLive(repositories[0], numberMatch[1]);
+      return '';
+    }
+    if (!repoQuery && indexedTickets.length > 1) {
+      help.textContent = `#${numberMatch[1]} exists in multiple repositories. Add the repository name to narrow it down.`;
+    }
+  }
+  // No branch above resolved this query to anything new. Returning empty
+  // (rather than falling back to whatever was already selected) lets callers
+  // tell "nothing matched" apart from "already had a value".
+  return '';
+}
+
+function filterTestingTickets() {
+  const query = document.getElementById('testing-ticket-search').value.trim().toLowerCase();
+  const select = document.getElementById('testing-issue-url');
+  let matches = 0;
+  [...select.options].slice(1).forEach(option => {
+    const haystack = `${option.dataset.repository} ${option.dataset.number} ${option.dataset.title} ${option.dataset.status}`.toLowerCase();
+    option.hidden = Boolean(query) && !query.split(/\s+/).every(term => haystack.includes(term.replace(/^#/, '')));
+    if (!option.hidden) matches += 1;
+  });
+  if (query && matches === 1) {
+    const match = [...select.options].slice(1).find(option => !option.hidden);
+    select.value = match.value;
+    document.getElementById('testing-manual-issue-url').value = '';
+    updateSelectedTicketLink();
+    return;
+  }
+  // The ready-queue dropdown only lists open, PR-attached tickets, so a query
+  // for anything outside it (closed, not yet synced, or pasted as a URL/board
+  // link) will always show zero dropdown matches. Resolve it live so typing
+  // gives feedback immediately instead of looking broken until Enter is hit.
+  if (query && matches === 0) {
+    const resolved = resolveTicketSearch();
+    if (!resolved) {
+      const help = document.getElementById('testing-search-help');
+      help.textContent = 'No ready-queue match. Paste the full GitHub issue or project-board URL to load any ticket directly.';
+      // A bare number (no repo, no URL) can't be resolved locally when the
+      // ticket is closed or was never synced. Check GitHub directly instead
+      // of leaving the search looking broken.
+      if (/^#?\d+$/.test(query)) verifyTicketLive(null, query.replace(/^#/, ''));
+    }
+  }
+}
+
+let ticketLookupTimer = null;
+function verifyTicketLive(repository, number) {
+  clearTimeout(ticketLookupTimer);
+  const help = document.getElementById('testing-search-help');
+  const originalQuery = document.getElementById('testing-ticket-search').value.trim();
+  ticketLookupTimer = setTimeout(async () => {
+    help.textContent = repository
+      ? `Checking GitHub for ${repository} #${number}…`
+      : `Checking GitHub for #${number} across known repositories…`;
+    try {
+      const params = new URLSearchParams({number});
+      if (repository) params.set('repository', repository);
+      const response = await fetch(`/tickets/lookup?${params}`);
+      const data = await response.json();
+      const matches = data.matches || [];
+      if (document.getElementById('testing-ticket-search').value.trim() !== originalQuery) return;
+      if (matches.length === 1) {
+        const match = matches[0];
+        document.getElementById('testing-issue-url').value = '';
+        document.getElementById('testing-manual-issue-url').value = match.url;
+        help.textContent = `Found ${match.repository} #${match.number} (${match.state}) on GitHub.`;
+        updateSelectedTicketLink();
+      } else if (matches.length > 1) {
+        help.textContent = `#${number} exists in multiple repositories: ${matches.map(m => m.repository).join(', ')}. Add the repository name to narrow it down.`;
+      } else if (repository) {
+        help.textContent = `No ticket #${number} found in ${repository}. Double-check the number.`;
+      } else {
+        help.textContent = `No ticket #${number} found in any known repository.`;
+      }
+    } catch (error) {
+      help.textContent = `Could not check GitHub for #${number}: ${error.message}`;
+    }
+  }, 400);
+}
+
+function updateSelectedTicketLink() {
+  const select = document.getElementById('testing-issue-url');
+  const option = select.selectedOptions[0];
+  const url = select.value.trim() || document.getElementById('testing-manual-issue-url').value.trim();
+  const link = document.getElementById('open-selected-testing-ticket');
+  link.href = url || '#';
+  link.hidden = !url;
+  const mission = document.getElementById('testing-mission');
+  if (select.value && option?.dataset.number) {
+    mission.querySelector('strong').textContent = `${DIALECT.mission} #${option.dataset.number} · ${option.dataset.status}`;
+    mission.querySelector('small').textContent = `${option.dataset.repository} // ${option.dataset.title}`;
+  } else if (url) {
+    mission.querySelector('strong').textContent = `Manual ${DIALECT.mission} selected`;
+    mission.querySelector('small').textContent = url;
+  } else {
+    mission.querySelector('strong').textContent = DIALECT.testing_waiting;
+    mission.querySelector('small').textContent = 'Select a ticket to load its evidence mission.';
+  }
+}
+
+document.getElementById('testing-issue-url').addEventListener('change', updateSelectedTicketLink);
+document.getElementById('testing-manual-issue-url').addEventListener('input', updateSelectedTicketLink);
+document.getElementById('testing-ticket-search').addEventListener('input', filterTestingTickets);
+document.getElementById('testing-ticket-search').addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); resolveTicketSearch(); }
+});
+
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function describeTelemetryCommand(command) {
+  const text = String(command || '').trim();
+  const lower = text.toLowerCase();
+  if (!text) return 'Working on the ticket';
+  if (/\b(ls|find|pwd|tree|dir)\b/.test(lower)) return 'Inspecting workspace structure';
+  if (/\b(grep|rg|git grep)\b/.test(lower)) return 'Searching the codebase for the affected feature';
+  if (/\b(cat|head|tail|sed|awk)\b/.test(lower)) return 'Reading relevant project files';
+  if (/\bgit\s+(status|diff|log|branch)\b/.test(lower)) return 'Checking repository state and existing changes';
+  if (/\bgit\s+(checkout|switch|reset|restore)\b/.test(lower)) return 'Preparing the ticket workspace';
+  if (/\b(npm|yarn|pnpm|pip|poetry|cargo)\b/.test(lower)) return 'Running project validation';
+  if (/\b(test|pytest|jest|vitest|playwright|cypress)\b/.test(lower)) return 'Running automated checks';
+  if (/\b(gh|curl|wget)\b/.test(lower)) return 'Checking GitHub or external ticket context';
+  if (/\b(mcp|toolsearch|tool search)\b/.test(lower)) return 'Looking up additional repository context';
+  return 'Working through the ticket requirements';
+}
 
 function renderAutomatedTests(data) {
   currentTestPlan = data;
   const ticketUrl = data.ticket_url || data.issue?.url;
+  const ticketNum = ticketUrl?.match(/\/issues\/(\d+)(?:[/?#]|$)/)?.[1] || '';
+  const modeBadge = document.getElementById('testing-mode-badge');
+  const isFixing = data.job_id && (data.provider || '').toLowerCase().includes('qa_fix');
+  if (data.job_id) {
+    modeBadge.hidden = false;
+    modeBadge.textContent = isFixing ? '🔧 FIXING' : '✓ TESTING';
+    modeBadge.style.background = isFixing ? 'var(--color-warning, #ff9900)' : 'var(--color-success, #0066cc)';
+  }
   const ticketLink = document.getElementById('open-testing-ticket');
   if (ticketUrl) { ticketLink.href = ticketUrl; ticketLink.hidden = false; }
+  const testingWhat = isFixing ? `Retest fix for #${ticketNum}` : `Evidence for #${ticketNum}`;
+  document.getElementById('testing-ticket-title').textContent = testingWhat;
+  // Show what we're testing and the current mode
+  const contextEl = document.getElementById('testing-context');
+  if (ticketNum) {
+    const whatEl = document.getElementById('testing-what');
+    const detailsEl = document.getElementById('testing-details');
+    if (isFixing) {
+      whatEl.textContent = `🔧 FIXING #${ticketNum}`;
+      detailsEl.textContent = 'Generating and validating a fix, then re-testing to 100% pass.';
+    } else {
+      whatEl.textContent = `✓ TESTING #${ticketNum}`;
+      detailsEl.textContent = 'Running automated evidence checks with destructive verification to validate the linked PR.';
+    }
+    contextEl.hidden = false;
+  }
   const isManualUiSkip = item => {
     if (!['skipped', 'not-run'].includes(String(item.result).toLowerCase())) return false;
     const text = `${item.command || ''} ${item.notes || ''}`.toLowerCase();
@@ -44,25 +323,61 @@ function renderAutomatedTests(data) {
   };
   const checks = (data.checks || data.tests_run || []).map((item, index) => ({...item, sourceIndex: index})).filter(item => !isManualUiSkip(item));
   const normalizeStatus = value => ({passed: 'passed', failed: 'failed', skipped: 'skipped', 'not-run': 'skipped'}[String(value).toLowerCase()] || 'skipped');
-  document.getElementById('test-checklist').innerHTML = checks.length ? `<h2>Automated validation telemetry</h2>${checks.map((item, index) => {
+  const counts = {passed: 0, failed: 0, skipped: 0};
+  checks.forEach(item => counts[normalizeStatus(item.result)]++);
+  const scorecard = document.getElementById('qa-scorecard');
+  scorecard.hidden = !checks.length;
+  document.getElementById('qa-pass-count').textContent = counts.passed;
+  document.getElementById('qa-fail-count').textContent = counts.failed;
+  document.getElementById('qa-skip-count').textContent = counts.skipped;
+  const total = checks.length;
+  const integrity = total ? Math.round((counts.passed / total) * 100) : 0;
+  const rank = counts.failed ? 'F' : counts.skipped ? (integrity >= 75 ? 'B' : 'C') : (integrity === 100 ? 'S' : 'A');
+  document.getElementById('qa-rank-value').textContent = rank;
+  document.getElementById('qa-rank-value').dataset.rank = rank.toLowerCase();
+  document.getElementById('qa-integrity-value').textContent = `${integrity}% integrity · ${total} evidence record${total === 1 ? '' : 's'}`;
+  document.getElementById('qa-coverage-label').textContent = total ? `${counts.passed}/${total} VERIFIED` : 'AWAITING EVIDENCE';
+  const verdict = String(data.overall || (counts.failed ? 'failed' : 'scanning')).toUpperCase();
+  document.getElementById('qa-verdict-value').textContent = verdict;
+  document.getElementById('qa-verdict-value').dataset.verdict = verdict.toLowerCase();
+  document.getElementById('qa-summary').textContent = data.summary || `${counts.passed} checks passed, ${counts.failed} failed, ${counts.skipped} skipped.`;
+  document.getElementById('test-checklist').innerHTML = checks.length ? checks.map((item, index) => {
     const status = normalizeStatus(item.result);
     const override = item.operator_override;
     const audit = override ? `<span class="override-audit">OPERATOR OVERRIDE · machine result: ${escapeTestHtml(item.automated_result || 'unknown').toUpperCase()} · ${escapeTestHtml(override.reason)}</span>` : '';
     const controls = data.override_allowed && data.job_id ? `<div class="test-override-controls"><span>Set outcome</span><button type="button" onclick="overrideTest(${item.sourceIndex}, 'passed')">PASS</button><button type="button" onclick="overrideTest(${item.sourceIndex}, 'failed')">FAIL</button><button type="button" onclick="overrideTest(${item.sourceIndex}, 'skipped')">SKIP</button>${override ? `<button class="override-reset" type="button" onclick="overrideTest(${item.sourceIndex}, 'original')">RESET</button>` : ''}</div>` : '';
-    return `<article class="auto-test auto-test-${status}" data-step="${escapeTestHtml(item.command || 'Automated check')}" data-status="${status}" data-notes="${escapeTestHtml(item.notes || '')}"><span class="test-signal">${status === 'passed' ? '✓' : status === 'failed' ? '×' : '–'}</span><div class="auto-test-copy"><strong>${escapeTestHtml(item.command || `Automated check ${index + 1}`)}</strong><small>${escapeTestHtml(item.notes || 'No additional runner notes')}</small>${audit}${controls}</div><b>${status.toUpperCase()}</b></article>`;
-  }).join('')}` : '<div class="telemetry-empty"><strong>QA DAEMON INITIALIZING</strong><span>Reading ticket and constructing proof strategy…</span></div>';
+    return `<article class="auto-test auto-test-${status}" data-step="${escapeTestHtml(item.command || 'Automated check')}" data-status="${status}" data-notes="${escapeTestHtml(item.notes || '')}"><span class="test-signal">${status === 'passed' ? '✓' : status === 'failed' ? '×' : '–'}</span><div class="auto-test-copy"><strong>${escapeTestHtml(item.command || `Automated check ${index + 1}`)}</strong><small>${escapeTestHtml(item.notes || 'No additional operator notes')}</small>${audit}${controls}</div><b>${status.toUpperCase()}</b></article>`;
+  }).join('') : `<div class="telemetry-empty"><strong>${DIALECT.testing_agent.toUpperCase()} STARTING</strong><span>Reading the ${DIALECT.mission} and constructing its evidence map…</span></div>`;
   document.getElementById('qa-repair-actions').hidden = !data.job_id || String(data.overall).toLowerCase() === 'passed';
 }
 
 function updateLiveFeed(job) {
   const consoleEl = document.getElementById('qa-console');
+  if (typeof job.logs_delta === 'string') {
+    qaRawLog = job.logs_reset ? job.logs_delta : qaRawLog + job.logs_delta;
+  } else if (typeof job.logs === 'string' && job.logs) {
+    qaRawLog = job.logs;
+  }
+  if (typeof job.log_cursor === 'number') qaLogCursor = job.log_cursor;
   const decodeEvent = line => {
     if (!line.trim().startsWith('{')) return [line];
     try {
       const event = JSON.parse(line); const item = event.item || {};
+      // Claude telemetry uses the compact MergeQuest event shape rather than
+      // the item-based stream used by Codex and older Claude versions.
+      if (event.mergequest_telemetry) {
+        if (event.kind === 'session_started') return ['▸ Claude session online'];
+        if (event.kind === 'command_started') {
+          const command = event.command || 'tool call';
+          return [`◇ ${describeTelemetryCommand(command)}`, `$ ${command}`];
+        }
+        if (event.kind === 'agent_update') return [`◇ ${event.message || 'Agent update'}`];
+        if (event.kind === 'result' || event.kind === 'turn_completed') return [`✓ ${event.message || 'Agent turn complete'}`];
+        return [];
+      }
       if (item.type === 'agent_message' && item.text) return [item.text];
       if (item.type === 'command_execution') {
-        if (event.type === 'item.started') return [`$ ${item.command || 'command'}`];
+        if (event.type === 'item.started') return [`◇ ${describeTelemetryCommand(item.command)}`, `$ ${item.command || 'command'}`];
         const output = String(item.aggregated_output || '').trim().split('\n').filter(Boolean);
         const result = item.exit_code === 0 ? '[PASS · exit 0]' : `[FAIL · exit ${item.exit_code ?? '?'}]`;
         return [...output, result];
@@ -81,16 +396,102 @@ function updateLiveFeed(job) {
     if (/^(▸|◇|\/\/)/.test(line)) return 'feed-meta';
     return 'feed-output';
   };
-  const lines = String(job.logs || '').split('\n').filter(Boolean).flatMap(decodeEvent).filter(Boolean).slice(-120);
-  const visible = lines.length ? lines : [`// ${job.stage || 'Preparing agent'}…`];
+  const lines = String(qaRawLog || '').split('\n').filter(Boolean).flatMap(decodeEvent).filter(Boolean).slice(-120);
+  const visible = lines.length ? lines : [`// ${job.stage || `Preparing ${DIALECT.testing_agent.toLowerCase()}`}…`];
   consoleEl.innerHTML = visible.map(line => `<div class="feed-line ${classify(line)}">${escapeTestHtml(line)}</div>`).join('');
   consoleEl.scrollTop = consoleEl.scrollHeight;
 }
 
 function updateJobState(prefix, job) {
   const state = document.getElementById('test-job-state');
-  state.textContent = `${prefix} ${job.id} // ${job.status.toUpperCase()} // ${job.stage}`;
+  const params = job.parameters || {};
+  const issueUrl = params.issue_url || '';
+  const ticketNum = issueUrl.match(/\/issues\/(\d+)(?:[/?#]|$)/)?.[1] || '';
+  const mode = prefix === 'REPAIR' ? 'FIXING' : 'TESTING';
+  const modeLabel = prefix === 'REPAIR' ? '🔧 FIXING' : '✓ TESTING';
+  const what = prefix === 'REPAIR'
+    ? `PR #${ticketNum} (Fix & Retest)`
+    : `Evidence for #${ticketNum}`;
+  state.innerHTML = `<strong>${modeLabel}</strong> ${what} · ${job.status.toUpperCase()} · ${escapeTestHtml(job.stage)}`;
   state.dataset.status = job.status;
+  state.dataset.mode = mode;
+  const stage = String(job.stage || '').toLowerCase();
+  let active = 'analyse';
+  if (/running autonomous|investigat|reading project|workspace|linked pr branch/.test(stage)) active = 'trace';
+  if (/test|validation|qa with/.test(stage)) active = 'test';
+  if (/post|evidence|report|completed/.test(stage) || job.status === 'completed') active = 'verify';
+  const order = ['analyse', 'trace', 'test', 'verify'];
+  const activeIndex = order.indexOf(active);
+  document.querySelectorAll('#qa-phases li').forEach((item, index) => {
+    item.classList.toggle('active', index === activeIndex && job.status === 'running');
+    item.classList.toggle('complete', index < activeIndex || job.status === 'completed');
+    item.classList.toggle('failed', index === activeIndex && job.status === 'failed');
+  });
+  updatePipelineGauge(job);
+  document.getElementById('qa-run-status').textContent = `${job.status.toUpperCase()} · ${job.stage || 'Working'}`;
+  const signature = `${job.stage || ''}|${String(qaRawLog || '').length}`;
+  if (signature !== qaLastLogSignature) {
+    qaLastLogSignature = signature;
+    qaLastActivityAt = Date.now();
+  }
+  document.getElementById('qa-last-activity').textContent = qaLastActivityAt
+    ? `${Math.max(0, Math.floor((Date.now() - qaLastActivityAt) / 1000))}s ago`
+    : 'Waiting for telemetry';
+  document.getElementById('qa-stop-button').disabled = !['queued', 'running', 'waiting_approval'].includes(job.status);
+}
+
+function updateQaClock() {
+  if (!qaRunStartedAt) return;
+  const seconds = Math.max(0, Math.floor((Date.now() - qaRunStartedAt) / 1000));
+  document.getElementById('qa-run-elapsed').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  if (qaLastActivityAt) {
+    const quietSeconds = Math.max(0, Math.floor((Date.now() - qaLastActivityAt) / 1000));
+    document.getElementById('qa-last-activity').textContent = quietSeconds >= 30
+      ? `${quietSeconds}s ago · provider is quiet; watchdog remains active`
+      : `${quietSeconds}s ago`;
+  }
+}
+setInterval(updateQaClock, 1000);
+
+function finishQaClock() {
+  updateQaClock();
+  qaRunStartedAt = null;
+}
+
+async function stopCurrentQaRun() {
+  if (!currentQaJobId || !confirm('Stop this QA run? Any active provider process will be terminated.')) return;
+  const button = document.getElementById('qa-stop-button');
+  button.disabled = true; button.textContent = 'Stopping…';
+  try {
+    const response = await fetch(`/api/jobs/${currentQaJobId}/stop`, {method: 'POST'});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to stop run');
+    finishQaClock();
+    document.getElementById('testing-status').textContent = 'QA run stopped by operator.';
+  } catch (error) {
+    document.getElementById('testing-status').textContent = `STOP ERROR // ${error.message}`;
+    button.disabled = false;
+  } finally { button.textContent = 'Stop run'; }
+}
+
+const PIPELINE_TIER_ORDER = [
+  'claude-haiku-4-5', 'claude-sonnet-5',
+  'gpt-5.6-luna', 'claude-opus-4-7', 'gpt-5.6-sol', 'gpt-5.6-sol-high',
+];
+function updatePipelineGauge(job) {
+  const items = [...document.querySelectorAll('#testing-pipeline-gauge .pipeline-gauge-bar li')];
+  // Each retry re-sets job.stage to "Running autonomous QA with {tier}"
+  // before it runs, so the currently polled stage always names the rung.
+  const text = String(job.stage || '').toLowerCase();
+  let activeIndex = -1;
+  for (let index = 0; index < PIPELINE_TIER_ORDER.length; index += 1) {
+    if (text.includes(PIPELINE_TIER_ORDER[index].toLowerCase())) activeIndex = index;
+  }
+  items.forEach((item, index) => {
+    item.classList.toggle('active', index === activeIndex && job.status === 'running');
+    item.classList.toggle('complete', index < activeIndex || job.status === 'completed');
+    item.classList.toggle('failed', index === activeIndex && job.status === 'failed');
+  });
 }
 
 async function overrideTest(index, status) {
@@ -106,7 +507,11 @@ async function overrideTest(index, status) {
     if (!response.ok) throw new Error(data.error || 'Unable to save operator override');
     currentTestPlan = {job_id: currentTestPlan.job_id, ...data.result};
     renderAutomatedTests(currentTestPlan);
-    const projectState = data.result.project_status?.updated ? ' // GITHUB: DONE · TEST STATE: PASS' : '';
+    const projectStatus = data.result.project_status;
+    const testState = projectStatus?.test_state == null ? 'NULL' : String(projectStatus.test_state).toUpperCase();
+    const projectState = projectStatus?.updated
+      ? ` // GITHUB: ${String(projectStatus.status).toUpperCase()} · TEST STATE: ${testState}`
+      : '';
     document.getElementById('testing-status').textContent = data.warning || `OPERATOR OVERRIDE SAVED // ${data.result.overall.toUpperCase()}${projectState}`;
   } catch (error) {
     document.getElementById('testing-status').textContent = `OVERRIDE ERROR // ${error.message}`;
@@ -114,54 +519,69 @@ async function overrideTest(index, status) {
 }
 
 async function runAutomatedTests() {
-  const issueUrl = document.getElementById('testing-issue-url').value.trim();
+  const issueUrl = resolveTicketSearch() || document.getElementById('testing-issue-url').value.trim() || document.getElementById('testing-manual-issue-url').value.trim();
   const button = document.getElementById('generate-tests');
   if (!issueUrl) { alert('Enter a GitHub issue URL first.'); return; }
-  button.disabled = true; button.textContent = 'Deploying QA daemon…';
+  button.disabled = true; button.textContent = `${DIALECT.testing_agent} starting…`;
   try {
-    const response = await fetch('/testing/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({issue_url: issueUrl, provider: document.getElementById('testing-provider').value})});
+    const response = await fetch('/testing/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({issue_url: issueUrl})});
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Unable to deploy QA daemon');
+    if (!response.ok) throw new Error(data.error || `Unable to start ${DIALECT.testing_agent.toLowerCase()}`);
     document.getElementById('testing-workspace').hidden = false;
+    currentQaJobId = data.job_id;
+    qaRunStartedAt = Date.now(); qaLastActivityAt = Date.now(); qaLastLogSignature = ''; qaLogCursor = 0; qaRawLog = '';
     renderAutomatedTests({checks: [], ticket_url: issueUrl});
     document.getElementById('testing-workspace').scrollIntoView({behavior: 'smooth'});
     while (true) {
       await wait(1500);
-      const jobResponse = await fetch(`/api/jobs/${data.job_id}`);
+      const jobResponse = await fetch(`/api/jobs/${data.job_id}?log_cursor=${qaLogCursor}`);
+      if (!jobResponse.ok) throw new Error(`Status request failed (${jobResponse.status})`);
       const job = await jobResponse.json();
       updateJobState('RUN', job);
       updateLiveFeed(job);
       if (job.status === 'completed') {
         currentTestPlan = {issue: {url: issueUrl}, job_id: job.id, ...job.result}; renderAutomatedTests(currentTestPlan);
-        document.getElementById('testing-status').textContent = 'QA report attached to GitHub ticket.';
+        document.getElementById('testing-status').textContent = 'Evidence report attached to GitHub ticket.';
+        finishQaClock();
+        currentQaJobId = null;
         break;
       }
-      if (['failed', 'stopped', 'closed'].includes(job.status)) throw new Error(job.error || 'QA daemon stopped');
+      if (['failed', 'stopped', 'closed'].includes(job.status)) {
+        finishQaClock();
+        throw new Error(job.error || `${DIALECT.testing_agent} stopped`);
+      }
     }
   } catch (error) { document.getElementById('testing-status').textContent = `QA STOPPED // ${error.message}`; }
-  finally { button.disabled = false; button.textContent = 'Run autonomous QA'; }
+  finally { button.disabled = false; button.textContent = DIALECT.testing_run; }
 }
 
 async function fixAndRetest() {
   if (!currentTestPlan?.job_id) return;
   const button = document.getElementById('qa-fix-button');
-  button.disabled = true; button.textContent = 'Repair daemon active…';
+  button.disabled = true; button.textContent = 'Repair process active…';
   try {
-    const response = await fetch(`/testing/jobs/${currentTestPlan.job_id}/fix`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({provider: document.getElementById('testing-provider').value})});
+    const response = await fetch(`/testing/jobs/${currentTestPlan.job_id}/fix`, {method: 'POST', headers: {'Content-Type': 'application/json'}});
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Unable to start repair');
     document.getElementById('qa-repair-actions').hidden = true;
+    currentQaJobId = data.job_id;
+    qaRunStartedAt = Date.now(); qaLastActivityAt = Date.now(); qaLastLogSignature = ''; qaLogCursor = 0; qaRawLog = '';
     while (true) {
       await wait(1500);
-      const job = await (await fetch(`/api/jobs/${data.job_id}`)).json();
+      const job = await (await fetch(`/api/jobs/${data.job_id}?log_cursor=${qaLogCursor}`)).json();
       updateJobState('REPAIR', job);
       updateLiveFeed(job);
       if (job.status === 'completed') {
         currentTestPlan = {job_id: job.id, ...job.result}; renderAutomatedTests(currentTestPlan);
         document.getElementById('testing-status').innerHTML = `100% PASS // OPEN PR UPDATED · <a href="${escapeTestHtml(job.result.pr_url)}" target="_blank">VIEW PR</a>`;
+        finishQaClock();
+        currentQaJobId = null;
         break;
       }
-      if (['failed', 'stopped', 'closed'].includes(job.status)) throw new Error(job.error || 'Repair stopped; PR was not updated');
+      if (['failed', 'stopped', 'closed'].includes(job.status)) {
+        finishQaClock();
+        throw new Error(job.error || 'Repair stopped; PR was not updated');
+      }
     }
   } catch (error) { document.getElementById('testing-status').textContent = `REPAIR STOPPED // ${error.message}`; }
   finally { button.disabled = false; button.textContent = 'Fix + retest to 100%'; }

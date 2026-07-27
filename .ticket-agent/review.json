@@ -1,0 +1,22 @@
+{
+  "verdict": "PASS",
+  "summary": "The specNotes feature is implemented end-to-end across the coordinated crm-api and crm-staff-desktop repositories: Prisma schema + migration (nullable TEXT), persistence on specification create (both duty and default-duty paths) and update (guarded by `!== undefined`), hydration in get-all and get-by-id reads, Tauri Rust request structs + GraphQL variable mapping, client store types/hydration/edit-save, and the Job Sheet template rendering with escapeHtml. The full data chain create/update -> persistence -> reads -> client hydration/edit-save -> job sheet output is verified consistent across both repos and their generated GraphQL clients. Output is HTML-escaped, so no XSS. No HIGH/CRITICAL findings. One LOW robustness note and a test-coverage gap are recorded.",
+  "findings": [
+    {
+      "severity": "LOW",
+      "title": "document/staff.ts specification query switched include -> select drops unlisted scalars",
+      "body": "In src/lib/document/staff.ts the Specification relation fetch was changed from `include: { specificationScaffoldDuty: true, specificationDesigns: {...} }` to `select: { specificationScaffoldDuty: true, specNotes: true, specificationDesigns: {...} }`. `select` returns ONLY the explicitly listed fields (all other Specification scalar columns become undefined), whereas `include` returned every scalar plus the relations. The job-sheet path only reads specificationScaffoldDuty, specNotes and specificationDesigns, so current behaviour is correct, but this is fragile: any future code reading another specification scalar (e.g. isDeleted) from this query would silently get undefined. Recommended: keep the relation `include` and add `select: { specNotes: true }` under it, or explicitly enumerate every scalar that the job sheet relies on.",
+      "path": "src/lib/document/staff.ts",
+      "line": 1451,
+      "side": "RIGHT"
+    },
+    {
+      "severity": "INFO",
+      "title": "No automated tests cover the new specNotes persistence/render path",
+      "body": "The coordinated diffs add no unit/integration tests for specNotes (no create/update round-trip test, no job-sheet template render assertion for the new section). Feature is wired manually end-to-end but lacks regression coverage. Consider adding a test in crm-api for specification.create/update round-trip of specNotes and a render check for jobSheet2025 specNotesSection.",
+      "path": "src/lib/document/staff.ts",
+      "line": 1681,
+      "side": "RIGHT"
+    }
+  ]
+}

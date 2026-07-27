@@ -93,6 +93,32 @@ def test_fetch_issues_uses_https_api_instead_of_parsing_gh_json(monkeypatch) -> 
     assert captured['params'] == {'state': 'open', 'per_page': 100}
 
 
+def test_fetch_issues_follows_full_github_pages(monkeypatch) -> None:
+    first_page = [{'number': number} for number in range(100)]
+    second_page = [{'number': 996}]
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        text = ''
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, **kwargs):
+        calls.append(kwargs['params'])
+        return FakeResponse(first_page if len(calls) == 1 else second_page)
+
+    monkeypatch.setattr(ticket_sync.requests, 'get', fake_get)
+    result = ticket_sync._fetch_github_issues('org/repo', 'open', 1000, 'secret-token')
+
+    assert result[-1] == {'number': 996}
+    assert calls == [{'state': 'open', 'per_page': 100}, {'state': 'open', 'per_page': 100, 'page': 2}]
+
+
 def test_missing_cli_token_has_actionable_error(monkeypatch) -> None:
     monkeypatch.setattr(
         ticket_sync,

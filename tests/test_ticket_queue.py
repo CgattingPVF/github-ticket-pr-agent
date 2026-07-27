@@ -58,6 +58,19 @@ def test_ticket_queue_returns_every_synced_open_ticket_by_default(tmp_path: Path
     assert len(store.list_tickets(limit=20)) == 20
 
 
+def test_integrity_scanner_lists_only_eligible_project_statuses(tmp_path: Path):
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    store.upsert_tickets([
+        {"key": f"org/repo#{number}", "repository": "org/repo", "number": number,
+         "url": f"https://github.com/org/repo/issues/{number}", "title": str(number),
+         "state": "OPEN", "project_status": status, "has_attached_pr": has_pr, "synced_at": "now"}
+        for number, status, has_pr in [(1, "In Progress", 1), (2, "PR Ready", 1), (3, "Ready for Build", 1), (4, "Backlog", 1), (5, "Done", 1), (6, "PR Ready", 0)]
+    ])
+    assert [ticket["number"] for ticket in store.list_testing_tickets()] == [1, 2, 3]
+    assert store.list_ticket_repositories() == ["org/repo"]
+    assert [ticket["number"] for ticket in store.list_ticket_references()] == [1, 2, 3, 4, 5, 6]
+
+
 def test_github_resync_clears_stale_project_status(tmp_path: Path):
     store = JobStore(tmp_path / "jobs.sqlite3")
     ticket = {

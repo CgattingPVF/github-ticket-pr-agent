@@ -10,6 +10,7 @@ class OverrideStore:
             "parameters": {"workflow_profile": "testing_only"},
             "result": {
                 "overall": "failed",
+                "repositories": ["widgets", "widgets-api"],
                 "tests_run": [
                     {"command": "focused test", "result": "failed", "notes": "negative fixture id"},
                     {"command": "build", "result": "passed", "notes": "clean"},
@@ -32,7 +33,20 @@ def test_operator_can_override_failed_qa_with_audited_reason(monkeypatch):
     monkeypatch.setattr(
         app_module,
         "GitHubOps",
-        lambda *args, **kwargs: type("ProjectOps", (), {"mark_issue_qa_done": lambda self, ref: {"Status": 1, "Test State": 1}})(),
+        lambda *args, **kwargs: type(
+            "ProjectOps",
+            (),
+            {
+                "sync_successful_qa_project_fields": lambda self, ref, repositories: {
+                    "updated": True,
+                    "count": 1,
+                    "test_state_count": 1,
+                    "status": "PR Ready",
+                    "test_state": None,
+                    "has_open_pr": True,
+                }
+            },
+        )(),
     )
     app_module.app.config.update(TESTING=True)
 
@@ -47,8 +61,8 @@ def test_operator_can_override_failed_qa_with_audited_reason(monkeypatch):
     assert result["tests_run"][0]["result"] == "passed"
     assert result["tests_run"][0]["automated_result"] == "failed"
     assert result["tests_run"][0]["operator_override"]["reason"] == "Negative IDs cannot occur in production."
-    assert result["project_status"]["status"] == "Done"
-    assert result["project_status"]["test_state"] == "Pass"
+    assert result["project_status"]["status"] == "PR Ready"
+    assert result["project_status"]["test_state"] is None
     assert "original machine result remains recorded" in comments[0][1]
 
 
@@ -73,7 +87,20 @@ def test_skipped_checks_do_not_prevent_a_successful_override(monkeypatch):
     monkeypatch.setattr(
         app_module,
         "GitHubOps",
-        lambda *args, **kwargs: type("ProjectOps", (), {"mark_issue_qa_done": lambda self, ref: {"Status": 1, "Test State": 1}})(),
+        lambda *args, **kwargs: type(
+            "ProjectOps",
+            (),
+            {
+                "sync_successful_qa_project_fields": lambda self, ref, repositories: {
+                    "updated": True,
+                    "count": 1,
+                    "test_state_count": 1,
+                    "status": "Done",
+                    "test_state": "Pass",
+                    "has_open_pr": False,
+                }
+            },
+        )(),
     )
     app_module.app.config.update(TESTING=True)
 
@@ -82,4 +109,7 @@ def test_skipped_checks_do_not_prevent_a_successful_override(monkeypatch):
         json={"index": 0, "status": "passed", "reason": "Impossible production fixture."},
     )
 
-    assert response.get_json()["result"]["overall"] == "passed"
+    result = response.get_json()["result"]
+    assert result["overall"] == "passed"
+    assert result["project_status"]["status"] == "Done"
+    assert result["project_status"]["test_state"] == "Pass"

@@ -1,51 +1,51 @@
 {% extends "base.html" %}
-{% block title %}Contracts · Neon Ops{% endblock %}
+{% block title %}{{ theme_dialect.home_title }}{% endblock %}
 {% block content %}
 {% set active = jobs|selectattr('status', 'in', ['queued','running','waiting_approval'])|list|length %}
+{% set display_rank = theme_info.get('ranks', {}).get(player.rank_code, player.rank) %}
+{% set next_rank_name = theme_info.get('ranks', {}).get(player.next_rank.code, player.next_rank.rank) if player.next_rank else '' %}
 
-<section class="hud streetcred-hud"
-  data-banked="{{ player.credits_banked }}"
-  data-rate="{{ player.credits_rate }}">
+<section class="hud streetcred-hud">
   <div class="hud-player">
     <div class="rank-sigil" aria-hidden="true"><span>{{ player.rank_code }}</span></div>
     <div class="hud-copy">
-      <div class="hud-rank-row"><strong>{{ player.rank }}</strong> <span class="muted">STREET CRED // {{ player.level }}</span></div>
-      <small>{{ player.credits_rate }} €$/hr passive network yield · {{ player.network_assets }} cleared contract asset{{ '' if player.network_assets == 1 else 's' }}</small>
+      <div class="hud-rank-row"><strong>{{ display_rank }}</strong> <span class="muted">{{ theme_dialect.rank_label }} // {{ player.xp|group_digits }} {{ theme_dialect.rank_unit }}</span></div>
+      <small>{{ player.historic_prs }} historic merged PR{{ '' if player.historic_prs == 1 else 's' }} · {{ player.completed }} completed {{ theme_dialect.mission }}{{ '' if player.completed == 1 else 's' }}</small>
       {% if player.next_rank %}
-      <div class="xp-bar" title="{{ player.xp_into_level }} / {{ player.xp_per_level }} street cred to {{ player.next_rank.rank }}">
+      <div class="xp-bar" title="{{ player.xp_into_level }} / {{ player.xp_per_level }} {{ theme_dialect.rank_label|lower }} to {{ next_rank_name }}">
         <span style="width: {{ player.progress_pct }}%"></span>
       </div>
-      <small class="muted">NEXT RANK // {{ player.next_rank.rank }}</small>
+      <small class="muted">NEXT RANK // {{ next_rank_name }}</small>
       {% else %}
-      <small class="muted">MAX STREET CRED // LEGEND STATUS CONFIRMED</small>
+      <small class="muted">MAXIMUM RANK // LEGEND STATUS CONFIRMED</small>
       {% endif %}
     </div>
   </div>
   <div class="hud-stats">
-    <article><strong class="credit-counter">{{ player.credits_banked }}</strong><span>Eurodollars €$</span></article>
-    <article><strong>{{ player.completed }}</strong><span>Targets flatlined</span></article>
+    <article><strong class="credit-counter">{{ player.credits_banked|group_digits }}</strong><span>{{ theme_dialect.currency_name }}</span></article>
+    <article><strong>{{ player.completed }}</strong><span>{{ theme_dialect.secured }}</span></article>
     <article><strong>{{ player.streak }}</strong><span>Day streak</span></article>
-    <article><strong class="{{ 'live' if active }}">{{ active }}</strong><span>Breaches live</span></article>
+    <article><strong class="{{ 'live' if active }}">{{ active }}</strong><span>{{ theme_dialect.live }}</span></article>
   </div>
 </section>
 
 <section class="fund-card gh-box">
-  <div class="fund-sigil" aria-hidden="true">₿</div>
+  <div class="fund-sigil" aria-hidden="true">{{ theme_dialect.fund_sigil }}</div>
   <div class="fund-copy">
-    <p class="eyebrow">AUTOMATIC REINVESTMENT // BLACKWALL MAINTENANCE</p>
-    <h2>Your EuroDollars keep the network alive.</h2>
-    <p>25% of passive contract yield is routed to perimeter shielding, cold storage, and emergency extraction. No checkout, no paperwork — the city takes its cut before the next breach.</p>
+    <p class="eyebrow">{{ theme_dialect.fund_eyebrow }}</p>
+    <h2>{{ theme_dialect.fund_title }}</h2>
+    <p>{{ theme_dialect.fund_body }}</p>
     <div class="fund-meter"><span style="width: {{ player.maintenance_progress_pct }}%"></span></div>
-    <small>€$ {{ player.maintenance_fund }} / €$ {{ player.maintenance_target }} to unlock <strong>BLACKWALL RESERVE</strong></small>
+    <small>{{ theme_dialect.currency }} {{ player.maintenance_fund|group_digits }} / {{ theme_dialect.currency }} {{ player.maintenance_target|group_digits }} to unlock <strong>{{ theme_dialect.reserve }}</strong></small>
   </div>
-  <div class="fund-total"><small>REINVESTED</small><strong>€$ {{ player.maintenance_fund }}</strong><span>{{ player.maintenance_progress_pct }}% secured</span></div>
+  <div class="fund-total"><small>{{ theme_dialect.allocated }}</small><strong>{{ theme_dialect.currency }} {{ player.maintenance_fund|group_digits }}</strong><span>{{ player.maintenance_progress_pct }}% secured</span></div>
 </section>
 
 {% if form_error %}<div class="flash flash-error">{{ form_error }}</div>{% endif %}
 
 {% if watched_jobs %}
 <section class="campaign batch-monitor" id="batch-monitor" data-job-ids="{{ watched_jobs|map(attribute='id')|join(',') }}">
-  <header class="section-title"><h2>{{ 'Secured breach queue' if defaults.local_repo_path else 'Parallel breach in progress' }}</h2><span>{{ watched_jobs|length }} contracts {{ 'serialized on the shared local network' if defaults.local_repo_path else 'running together' }}</span></header>
+  <header class="section-title"><h2>{{ 'Shared workspace queue' if defaults.local_repo_path else 'Parallel operations in progress' }}</h2><span>{{ watched_jobs|length }} {{ theme_dialect.missions }} {{ 'staged one at a time in the shared workspace' if defaults.local_repo_path else 'underway together' }}</span></header>
   <div class="batch-grid">
     {% for job in watched_jobs %}
     <a class="gh-box batch-card" href="{{ url_for('job_detail', job_id=job.id) }}" data-job-id="{{ job.id }}">
@@ -64,18 +64,18 @@
       <div class="board-tabs">
         <span class="board-tab selected">
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill="currentColor" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>
-          <span id="ticket-count">{{ tickets|length }}</span> incoming contracts
+          <span id="ticket-count">{{ tickets|length }}</span> {{ theme_dialect.incoming }}
         </span>
       </div>
-      <input id="ticket-search" class="ticket-search" type="search" placeholder="Search target #1091" aria-label="Search contracts by ticket number or text" oninput="filterTickets(this.value)">
-      <span class="board-hint"><button type="button" class="btn btn-small" onclick="resyncBounties(this)">Breach // Resync</button> <select id="bounty-sort" class="btn btn-small" onchange="sortBounties(this.value)"><option value="priority">Sort: priority</option><option value="updated">Sort: recently updated</option><option value="title">Sort: title</option></select></span>
+      <input id="ticket-search" class="ticket-search" type="search" placeholder="{{ theme_dialect.search_placeholder }}" aria-label="Search {{ theme_dialect.missions }} by ticket number or text" oninput="filterTickets(this.value)">
+      <span class="board-hint"><button type="button" class="btn btn-small" onclick="resyncBounties(this)">{{ theme_dialect.sync }}</button> <select id="bounty-sort" class="btn btn-small" onchange="sortBounties(this.value)"><option value="priority">Sort: priority</option><option value="updated">Sort: recently updated</option><option value="title">Sort: title</option><option value="number-asc">Sort: ticket # ascending</option><option value="number-desc">Sort: ticket # descending</option></select></span>
     </header>
     <div class="issue-list">
       {% for ticket in tickets %}
       {% set threat = {'P0':'critical','P1':'high','P2':'medium'}.get(ticket.priority, 'low') %}
-      {% set threat_label = {'P0':'CYBERPSYCHO','P1':'HOSTILE','P2':'WATCHED'}.get(ticket.priority, 'CLEAN') %}
+      {% set threat_label = theme_dialect.threats.get(ticket.priority, theme_dialect.threats.other) %}
       {% set reward = {'P0':2500,'P1':1800,'P2':1200}.get(ticket.priority, 900) %}
-      <div class="issue-row-wrap" data-url="{{ ticket.url }}" data-key="{{ ticket.key }}" data-priority="{{ ticket.priority }}" data-title="{{ ticket.title|lower }}" data-search="{{ ticket.number }} {{ ticket.title|lower }} {{ ticket.repository|lower }} {{ ticket.labels|lower }} {{ ticket.assignees|lower }}" data-updated="{{ ticket.updated_at or '' }}">
+      <div class="issue-row-wrap" data-url="{{ ticket.url }}" data-key="{{ ticket.key }}" data-priority="{{ ticket.priority }}" data-title="{{ ticket.title|lower }}" data-number="{{ ticket.number }}" data-search="{{ ticket.number }} {{ ticket.title|lower }} {{ ticket.repository|lower }} {{ ticket.labels|lower }} {{ ticket.assignees|lower }}" data-updated="{{ ticket.updated_at or '' }}">
       <button type="button" class="issue-row" onclick="selectMission(this)">
         <span class="issue-open-icon threat-{{ threat }}" aria-hidden="true">
           <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill="currentColor" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>
@@ -90,19 +90,19 @@
         </span>
         <span class="issue-side">
           <b class="threat-tag threat-{{ threat }}">{{ threat_label }}</b>
-          <b class="bounty">€$ {{ reward }}</b>
-          <span role="button" class="btn btn-small" onclick="event.stopPropagation(); hideBounty(this.closest('.issue-row-wrap'))">Purge</span>
-          <a class="btn btn-small" href="{{ ticket.url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Open shard</a>
+          <b class="bounty">{{ theme_dialect.currency }} {{ reward|group_digits }}</b>
+          <span role="button" class="btn btn-small" onclick="event.stopPropagation(); hideBounty(this.closest('.issue-row-wrap'))">{{ theme_dialect.hide_item }}</span>
+          <a class="btn btn-small" href="{{ ticket.url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">{{ theme_dialect.open_item }}</a>
         </span>
       </button>
       <details class="test-plan" data-key="{{ ticket.key }}" data-url="{{ ticket.url }}">
-        <summary onclick="event.stopPropagation()">RECON PROTOCOL{{ ' // LOADED' if ticket.repro_steps or ticket.pass_steps else '' }}</summary>
+        <summary onclick="event.stopPropagation()">{{ theme_dialect.briefing }}{{ ' // LOADED' if ticket.repro_steps or ticket.pass_steps else '' }}</summary>
         <div class="test-plan-body" onclick="event.stopPropagation()">
           {% if ticket.repro_steps or ticket.pass_steps %}
           {% if ticket.repro_steps %}<strong>Steps to reproduce</strong><ol>{% for step in ticket.repro_steps %}<li>{{ step }}</li>{% endfor %}</ol>{% endif %}
           {% if ticket.pass_steps %}<strong>Steps to verify the fix</strong><ol>{% for step in ticket.pass_steps %}<li>{{ step }}</li>{% endfor %}</ol>{% endif %}
           {% else %}
-          <button type="button" class="btn btn-small" onclick="generateTestPlan(this)">Compile recon protocol</button>
+          <button type="button" class="btn btn-small" onclick="generateTestPlan(this)">Prepare {{ theme_dialect.briefing|lower }}</button>
           {% endif %}
         </div>
       </details>
@@ -110,68 +110,79 @@
       {% else %}
       <div class="empty-state">
         <span aria-hidden="true">⌁</span>
-        <strong>NO CONTRACT SIGNALS</strong>
-        <small>Scan GitHub from the <a href="{{ url_for('prompts_page') }}">prompt forge</a>, then lock a target into the runner loadout.</small>
+        <strong>{{ theme_dialect.empty }}</strong>
+        <small>Consult GitHub from the <a href="{{ url_for('prompts_page') }}">{{ theme_dialect.prompt_title }}</a>, then choose an item for the {{ theme_dialect.loadout|lower }}.</small>
       </div>
       {% endfor %}
-      {% if tickets %}<div id="ticket-search-empty" class="empty-state" hidden><span aria-hidden="true">⌁</span><strong>NO MATCHING CONTRACTS</strong><small>Adjust the target number or search phrase.</small></div>{% endif %}
+      {% if tickets %}<div id="ticket-search-empty" class="empty-state" hidden><span aria-hidden="true">⌁</span><strong>NO MATCHING {{ theme_dialect.missions|upper }}</strong><small>Adjust the ticket number or search phrase.</small></div>{% endif %}
     </div>
   </section>
 
   <form method="post" action="{{ url_for('create_job') }}" class="gh-box launch-card" id="mission-form">
-    <header class="gh-box-header"><strong>Runner loadout</strong><span class="live-dot" id="loadout-state">SYSTEM READY</span></header>
+    <header class="gh-box-header"><strong>{{ theme_dialect.loadout }}</strong><span class="live-dot" id="loadout-state">{{ theme_dialect.loadout_ready }}</span></header>
     <div class="form-body">
-      <label>Contract targets
-        <input id="issue-url" type="text" readonly required placeholder="Select up to 3 tickets below">
+      <label>{{ theme_dialect.targets }}
+        <input id="issue-url" type="text" readonly required placeholder="Select up to 3 {{ theme_dialect.missions }} below">
         <div id="selected-issues"></div>
-        <small>Choose up to 3 contracts. {{ 'Shared local-workspace operations run one at a time to prevent branch and review collisions.' if defaults.local_repo_path else 'Isolated checkouts run concurrently.' }}</small>
+        <small>Choose up to 3 {{ theme_dialect.missions }}. {{ 'Shared local-workspace operations run one at a time to prevent branch and review collisions.' if defaults.local_repo_path else 'Isolated checkouts run concurrently.' }}</small>
       </label>
       <div class="two-col">
         <label>Insertion point<input name="base_branch" required value="{{ form.base_branch if form else 'develop' }}"></label>
-        <label>Operation prefix<input name="branch_prefix" required value="{{ form.branch_prefix if form else 'bug-fix' }}"></label>
+        <label>Operation prefix<input name="branch_prefix" required value="{{ form.branch_prefix if form else 'feature' }}"></label>
       </div>
 
-      <fieldset class="strategy-set"><legend>Operation protocol <small>choose your risk curve</small></legend>
+      <fieldset class="strategy-set"><legend>{{ theme_dialect.protocol }} <small>{{ theme_dialect.protocol_hint }}</small></legend>
         <label class="strategy">
           <input type="radio" name="workflow_profile" value="full_pr" checked>
-          <span class="strategy-copy"><b>AUTONOMOUS DAEMON</b><small>Recon → breach → patch → integrity scan → counter-intel → deploy. The runner owns the full intrusion.</small></span>
-          <span class="strategy-odds">€$ MAX<br><em>EXPOSURE // HIGH</em></span>
+          <span class="strategy-copy"><b>{{ theme_dialect.full_strategy }}</b><small>Clean branch → investigate ticket → implement fix → validate and review → open PR.</small></span>
+          <span class="strategy-odds">{{ theme_dialect.currency }} MAX<br><em>{{ 'COMMITMENT' if is_wwii or is_skyrim else 'EXPOSURE' }} // HIGH</em></span>
         </label>
         <label class="strategy">
           <input type="radio" name="workflow_profile" value="investigate_fix">
-          <span class="strategy-copy"><b>GHOST PROTOCOL</b><small>Recon, patch, integrity scan, and counter-intel stay local. No remote trace, push, or PR payload.</small></span>
-          <span class="strategy-odds">€$ LOW<br><em>TRACE // ZERO</em></span>
+          <span class="strategy-copy"><b>{{ theme_dialect.recon_strategy }}</b><small>Investigation, repair, validation, and independent review stay local. No remote push or PR is sent.</small></span>
+          <span class="strategy-odds">{{ theme_dialect.currency }} LOW<br><em>REMOTE WRITE // NONE</em></span>
         </label>
       </fieldset>
 
       <div class="risk-box">
-        <div><strong>Dead-drop failure intel</strong><small>If the breach is severed, transmit the blocker, evidence, and recovery route back to the contract thread.</small></div>
+        <div><strong>{{ theme_dialect.failure_report }}</strong><small>If the operation stops, return the blocker, evidence, and recovery route to the original GitHub thread.</small></div>
         <label class="switch"><input type="checkbox" name="comment_on_failure" {% if (form and form.comment_on_failure) or (not form and defaults.comment_on_failure) %}checked{% endif %}><span></span></label>
       </div>
 
-      <details class="advanced-details"><summary>Open ripperdoc loadout</summary><div class="advanced">
-        <label>Human gate<select name="approval_mode"><option value="auto">Daemon-authorized gates</option><option value="each_stage">Authorize every breach stage</option></select></label>
-        <label>Primary runner<select name="agent_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="custom">Custom daemon</option></select></label>
-        <label>Counter-intel runner<select name="review_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="custom">Custom daemon</option></select></label>
-        <label>Runner executable<input name="agent_command" value="{{ form.agent_command if form else defaults.agent_command }}" placeholder="Custom daemon command"></label>
-        <label>Counter-intel executable<input name="review_command" value="{{ form.review_command if form else defaults.review_command }}" placeholder="Custom daemon command"></label>
+      <fieldset class="strategy-set model-strategy-set"><legend>Model strategy</legend>
+        <label class="strategy">
+          <input type="radio" name="model_auto_escalate" value="on" checked>
+          <span class="strategy-copy"><b>Auto step-up on failure</b><small>Give the selected model five low-confidence recovery attempts, then move to the next model.</small></span>
+        </label>
+        <label class="strategy">
+          <input type="radio" name="model_auto_escalate" value="off">
+          <span class="strategy-copy"><b>Lock selected model</b><small>Never change models automatically, even when confidence remains below 80%.</small></span>
+        </label>
+      </fieldset>
+
+      <details class="advanced-details"><summary>{{ theme_dialect.advanced }}</summary><div class="advanced">
+        <label>Human gate<select name="approval_mode"><option value="auto">Agent-authorized stages</option><option value="each_stage">Authorize every operation stage</option></select></label>
+        <label>{{ theme_settings.primary }}<select name="agent_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="custom">Custom {{ theme_dialect.agent }}</option></select></label>
+        <label>{{ theme_settings.reviewer }}<select name="review_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="custom">Custom {{ theme_dialect.agent }}</option></select></label>
+        <small>Prompts are compressed to ~1k tokens to reduce usage while preserving task requirements and latest evidence.</small>
+        <label>Implementation executable<input name="agent_command" value="{{ form.agent_command if form else defaults.agent_command }}" placeholder="Custom {{ theme_dialect.agent }} command"></label>
+        <label>Reviewer executable<input name="review_command" value="{{ form.review_command if form else defaults.review_command }}" placeholder="Custom {{ theme_dialect.agent }} command"></label>
         <label>Integrity scripts<textarea name="validation_commands" rows="3" placeholder="Focused test command&#10;Application build command">{{ form.validation_commands if form else '' }}</textarea><small>One focused scan and one build check per line. Shell operators remain air-gapped.</small></label>
-        <label class="check"><input type="checkbox" name="close_issue_on_merge" {% if (form and form.close_issue_on_merge) or (not form and defaults.close_issue_on_merge) %}checked{% endif %}><span>Flatline contract after default-branch deployment</span></label>
+        <label class="check"><input type="checkbox" name="close_issue_on_merge" {% if (form and form.close_issue_on_merge) or (not form and defaults.close_issue_on_merge) %}checked{% endif %}><span>Close ticket after default-branch deployment</span></label>
       </div></details>
 
       <div class="launch-row">
-        <button class="btn-launch btn-launch-openai" type="button" onclick="launchHigh(this.form)" title="Deploy the highest-capability OpenAI runner at low reasoning effort."><span><small>OPENAI // HEAVY</small>Initiate deep breach<em>gpt-5.6-sol · overclock low</em></span><b>›</b></button>
-        <button class="btn-launch btn-launch-openai btn-launch-ultra" type="button" onclick="launchUltra(this.form)" title="Deploy the fast OpenAI runner at low reasoning effort."><span><small>OPENAI // BLITZ</small>Initiate quickhack<em>gpt-5.6-luna · overclock low</em></span><b>›</b></button>
-        <button class="btn-launch btn-launch-anthropic" type="button" onclick="launchClaude(this.form, 'sonnet')" title="Deploy Claude Sonnet for a balanced breach."><span><small>ANTHROPIC // RECON</small>Deploy Sonnet daemon<em>claude-sonnet-4-6</em></span><b>›</b></button>
-        <button class="btn-launch btn-launch-anthropic btn-launch-anthropic-opus" type="button" onclick="launchClaude(this.form, 'opus')" title="Deploy Claude Opus for maximum-depth analysis."><span><small>ANTHROPIC // BLACK ICE</small>Deploy Opus daemon<em>claude-opus-4-7</em></span><b>›</b></button>
+        <button class="btn-launch btn-launch-openai btn-launch-instant" type="button" onclick="launchInstant(this.form)" title="Start on Luna and escalate up the remaining pipeline if the evidence gate fails."><span><small>OPENAI // FAST START</small>Run Fast OpenAI {{ theme_dialect.agent }}<em>Luna -> Opus -> Sol Low -> Sol High</em></span><b>›</b></button>
+        <button class="btn-launch btn-launch-anthropic btn-launch-anthropic-haiku" type="button" onclick="launchClaude(this.form, 'claude-haiku-4-5')" title="Start Claude-native on Haiku and climb the single pipeline."><span><small>ANTHROPIC // BALANCED</small>Run Claude Ladder {{ theme_dialect.agent }}<em>Haiku -> Sonnet -> Luna -> Opus -> Sol Low -> Sol High</em></span><b>›</b></button>
+        <button class="btn-launch btn-launch-openai" type="button" onclick="launchHigh(this.form)" title="Skip escalation and start with the highest configured OpenAI delivery model."><span><small>OPENAI // MAXIMUM</small>{{ theme_dialect.full_action }}<em>gpt-5.6-sol · reasoning low</em></span><b>›</b></button>
       </div>
-      <p class="safety">HUMAN-IN-THE-LOOP LOCK // no payload merges without your authorization</p>
+      <p class="safety">HUMAN-IN-THE-LOOP AUTHORIZATION // no change merges without your approval</p>
     </div>
   </form>
 </div>
 
 <section class="campaign">
-  <header class="section-title"><h2>Operation archive</h2><span>{{ jobs|length }} contract{{ '' if jobs|length == 1 else 's' }} recorded</span></header>
+  <header class="section-title"><h2>{{ theme_dialect.archive }}</h2><span>{{ jobs|length }} {{ theme_dialect.mission }}{{ '' if jobs|length == 1 else 's' }} recorded</span></header>
   <div class="gh-box table-wrap"><table>
     <thead><tr><th>Operation</th><th>Target</th><th>Insertion</th><th>Status</th><th>Intel</th><th>Last signal</th></tr></thead>
     <tbody>
@@ -181,20 +192,21 @@
       <td class="truncate">{{ job.issue_url|replace('https://github.com/', '') }}</td>
       <td><code>{{ job.base_branch }}</code></td>
       <td><span class="state state-{{ job.status }}">{{ job.status|replace('_', ' ') }}</span></td>
-      <td class="payout">{% if job.status == 'completed' %}TARGET FLATLINED{% elif job.status == 'failed' %}INTEL EXTRACTED{% elif job.status in ['queued','running','waiting_approval'] %}<span class="in-play">BREACH ACTIVE</span>{% else %}SIGNAL LOST{% endif %}</td>
+      <td class="payout">{% if job.status == 'completed' %}{{ theme_dialect.archive_completed }}{% elif job.status == 'failed' %}{{ theme_dialect.archive_failed }}{% elif job.status in ['queued','running','waiting_approval'] %}<span class="in-play">{{ theme_dialect.archive_active }}</span>{% else %}{{ theme_dialect.archive_closed }}{% endif %}</td>
       <td class="muted-cell">{{ job.updated_at[:16].replace('T', ' ') }}</td>
     </tr>
-    {% else %}<tr><td colspan="6" class="muted">NO CONTRACT HISTORY // lock a target above</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="6" class="muted">NO {{ theme_dialect.missions|upper }} IN THE ARCHIVE // choose an item above</td></tr>{% endfor %}
     </tbody>
   </table></div>
 </section>
 
 <section class="campaign">
-  <header class="section-title"><h2>Encrypted accolades</h2><span>{{ player.rank }} · {{ player.unlocked_count }}/{{ player.achievements|length }} decrypted</span></header>
-  <div class="cred-strip" aria-label="Encrypted accolades">
+  <header class="section-title"><h2>{{ theme_dialect.accolades }}</h2><span>{{ display_rank }} · {{ player.unlocked_count }}/{{ player.achievements|length }} {{ theme_dialect.accolades_state }}</span></header>
+  <div class="cred-strip" aria-label="{{ theme_dialect.accolades }}">
     {% for achievement in player.achievements %}
-    <div class="cred-node {{ 'unlocked' if achievement.unlocked else 'locked' }}" title="{{ achievement.desc }}">
-      <b>{{ achievement.icon }}</b><span><strong>{{ achievement.name }}</strong><small>{{ achievement.desc }}</small></span>
+    {% set themed_achievement = theme_info.get('achievements', {}).get(achievement.name, achievement) %}
+    <div class="cred-node {{ 'unlocked' if achievement.unlocked else 'locked' }}" title="{{ themed_achievement.desc }}">
+      <b>{{ achievement.icon }}</b><span><strong>{{ themed_achievement.name }}</strong><small>{{ themed_achievement.desc }}</small></span>
     </div>
     {% endfor %}
   </div>
@@ -204,61 +216,142 @@
   <div class="breach-noise" aria-hidden="true"></div>
   <div class="breach-shell">
     <header class="breach-header">
-      <div><small>NETWATCH INTERFACE // MQ-77</small><h2 id="breach-title">Breach Protocol</h2></div>
-      <div class="breach-clock"><span>TIME REMAINING</span><strong id="breach-time">10.0</strong></div>
+      <div class="breach-brand"><span class="breach-brand-mark">MQ</span><div><small>MERGEQUEST {{ theme_dialect.overlay_command }}</small><h2 id="breach-title">{{ theme_dialect.overlay_title }}</h2></div></div>
+      <div class="breach-clock"><i></i><span>{{ theme_dialect.overlay_window }}</span><strong id="breach-time">0.0</strong><small>SECONDS</small></div>
     </header>
-    <div class="breach-rule"><span></span><b>ICE</b><span></span></div>
     <div class="breach-layout">
-      <section class="breach-matrix-wrap" aria-label="Code matrix">
-        <header><strong>CODE MATRIX</strong><span>SELECTING OPTIMAL PATH...</span></header>
-        <div id="breach-matrix" class="breach-matrix"></div>
+      <section class="breach-visual" aria-label="{{ theme_sync.aria }}">
+        {% if ui_theme == 'professional' %}
+        <div class="sync-scene sync-chat">
+          <div class="chat-head"><span class="chat-avatar" aria-hidden="true">MQ</span><div><strong>MergeQuest Assistant</strong><small>{{ theme_sync.terminal }}</small></div><i class="chat-online" aria-hidden="true"></i></div>
+          <div id="breach-matrix" class="chat-thread" aria-live="polite"></div>
+          <div class="chat-typing" aria-hidden="true"><i></i><i></i><i></i></div>
+        </div>
+        {% elif ui_theme == 'skyrim' %}
+        <div class="sync-scene sync-scroll">
+          <div class="scroll-atmosphere" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="ancient-scroll">
+            <i class="scroll-roller scroll-roller-top" aria-hidden="true"></i>
+            <div class="scroll-parchment">
+              <span class="scroll-rune" aria-hidden="true">ᛟ</span>
+              <small>THE GUILD LEDGER</small>
+              <strong>Courier's Writ</strong>
+              <div id="breach-matrix" class="scroll-script" aria-live="polite"></div>
+              <span class="scroll-seal" aria-hidden="true">MQ</span>
+              <span class="scroll-inkpot" aria-hidden="true"><i></i></span>
+              <span class="scroll-quill" aria-hidden="true">
+                <svg viewBox="0 0 112 180" focusable="false">
+                  <defs>
+                    <linearGradient id="quill-feather" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f2ead2"/><stop offset=".48" stop-color="#c9b98e"/><stop offset="1" stop-color="#766747"/></linearGradient>
+                    <linearGradient id="quill-shaft" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#5b4020"/><stop offset=".48" stop-color="#e0c786"/><stop offset="1" stop-color="#513719"/></linearGradient>
+                  </defs>
+                  <path class="quill-feather" d="M88 4C50 16 22 52 20 98c0 17 5 29 10 39 7-23 19-47 39-70-16 26-27 52-34 78 12-8 28-20 39-36C96 76 102 35 88 4Z" fill="url(#quill-feather)"/>
+                  <path class="quill-barb" d="M77 18 39 99m47-64L34 116m57-63-54 79M66 30l20 4M54 46l28 5M43 63l32 7M33 82l31 8M28 102l25 8" fill="none" stroke="#716344" stroke-width="1.35" stroke-linecap="round" opacity=".75"/>
+                  <path class="quill-shaft" d="M91 12C73 55 53 101 28 164" fill="none" stroke="url(#quill-shaft)" stroke-width="5" stroke-linecap="round"/>
+                  <path class="quill-nib" d="m28 153 8 17-15 8-2-18 5-10Z" fill="#33271c" stroke="#b79b63" stroke-width="1.2"/><path d="m28 154-2 17" stroke="#d1b675" stroke-width="1"/>
+                </svg>
+                <i class="quill-ink"></i>
+              </span>
+            </div>
+            <i class="scroll-roller scroll-roller-bottom" aria-hidden="true"></i>
+          </div>
+        </div>
+        {% elif ui_theme == 'wwii' %}
+        <div class="sync-scene sync-radar">
+          <div class="radar-scope" aria-hidden="true"><i class="radar-sweep"></i><b class="radar-blip"></b><b class="radar-blip"></b><b class="radar-blip"></b></div>
+          <div id="breach-matrix" class="teletype" aria-live="polite"></div>
+        </div>
+        {% elif ui_theme == 'pvf' %}
+        <div class="sync-scene sync-scaffold">
+          <div class="scaffold-yard">
+            <svg class="scaffold-svg" viewBox="0 0 300 220" preserveAspectRatio="xMidYMax meet" aria-label="Scaffold being erected" role="img">
+              <!-- ground -->
+              <line class="ground" x1="8" y1="196" x2="292" y2="196"/>
+              <!-- three standards (uprights) -->
+              <g class="frame">
+                <line x1="52"  y1="40" x2="52"  y2="196"/>
+                <line x1="150" y1="40" x2="150" y2="196"/>
+                <line x1="248" y1="40" x2="248" y2="196"/>
+                <!-- ledgers (lifts) -->
+                <line x1="52" y1="40"  x2="248" y2="40"/>
+                <line x1="52" y1="92"  x2="248" y2="92"/>
+                <line x1="52" y1="144" x2="248" y2="144"/>
+                <line x1="52" y1="196" x2="248" y2="196"/>
+                <!-- diagonal braces -->
+                <line class="brace" x1="52"  y1="92"  x2="150" y2="40"/>
+                <line class="brace" x1="150" y1="144" x2="248" y2="92"/>
+                <line class="brace" x1="52"  y1="196" x2="150" y2="144"/>
+              </g>
+              <!-- base plates -->
+              <g class="plates"><rect x="45" y="194" width="14" height="5"/><rect x="143" y="194" width="14" height="5"/><rect x="241" y="194" width="14" height="5"/></g>
+              <!-- planks (boards) laid on each lift, revealed on a loop -->
+              <g class="planks">
+                <rect class="plank p1" x="54" y="188" width="192" height="6"/>
+                <rect class="plank p2" x="54" y="136" width="192" height="6"/>
+                <rect class="plank p3" x="54" y="84"  width="192" height="6"/>
+              </g>
+              <!-- crane hook lowering the top board -->
+              <g class="crane">
+                <line class="hoist" x1="150" y1="0" x2="150" y2="30"/>
+                <rect class="beam" x="112" y="30" width="76" height="8" rx="2"/>
+              </g>
+            </svg>
+            <span class="scaffold-flag">PVF</span>
+          </div>
+          <div id="breach-matrix" class="scaffold-log" aria-live="polite"></div>
+        </div>
+        {% elif ui_theme == 'hacker' %}
+        <div class="sync-scene sync-portscan">
+          <div class="scan-grid" aria-hidden="true">{% for _ in range(48) %}<i></i>{% endfor %}</div>
+          <div class="terminal-window">
+            <div class="terminal-bar"><span class="console-lights"><i></i><i></i><i></i></span><strong>{{ theme_sync.terminal }}</strong><small>{{ theme_sync.code }}</small></div>
+            <div id="breach-matrix" class="terminal-output" aria-live="polite"></div>
+            <div class="terminal-prompt"><span>{{ theme_sync.prompt }}</span><b>_</b></div>
+          </div>
+        </div>
+        {% else %}
+        <div class="terminal-window">
+          <div class="terminal-bar"><span class="console-lights"><i></i><i></i><i></i></span><strong>{{ theme_sync.terminal }}</strong><small>{{ theme_sync.code }}</small></div>
+          <div id="breach-matrix" class="terminal-output" aria-live="polite"></div>
+          <div class="terminal-prompt"><span>{{ theme_sync.prompt }}</span><b>_</b></div>
+        </div>
+        {% endif %}
+        <div class="terminal-meter"><div><span>{{ theme_sync.transfer }}</span><strong id="breach-percent">00%</strong></div><pre aria-hidden="true">[....................]</pre><i data-breach-progress></i></div>
+        <p id="breach-status">{{ theme_dialect.overlay_status }}</p>
+        <small id="breach-targets"></small>
       </section>
-      <aside class="breach-daemons">
-        <header><strong>UPLINK DAEMONS</strong><span>AUTO-SOLVE ENABLED</span></header>
-        <div class="daemon-row active"><span><b>GITHUB_SYNC</b><small>Acquire contract shards</small></span><i>UPLOAD</i></div>
-        <div class="daemon-row"><span><b>PRIORITY_SCAN</b><small>Decode threat labels</small></span><i>QUEUED</i></div>
-        <div class="daemon-row"><span><b>QUEUE_REBUILD</b><small>Reindex target network</small></span><i>QUEUED</i></div>
-        <div class="breach-buffer-label"><span>BUFFER</span><small id="breach-buffer-count">0 / 6</small></div>
-        <div id="breach-buffer" class="breach-buffer"></div>
+      <aside class="breach-operations">
+        <header><div><small>{{ theme_sync.sequence_label }}</small><strong>{{ theme_dialect.overlay_timeline }}</strong></div><span id="breach-buffer-count">01 / 04</span></header>
+        <ol id="breach-buffer" class="breach-stages">
+          {% for stage in theme_sync.stages %}<li class="{{ 'active' if loop.first else '' }}"><i>{{ '%02d'|format(loop.index) }}</i><span><strong>{{ stage.title }}</strong><small>{{ stage.detail }}</small></span><b>{{ 'RUNNING' if loop.first else 'QUEUED' }}</b></li>{% endfor %}
+        </ol>
+        <div class="breach-console"><span class="console-lights"><i></i><i></i><i></i></span><p id="breach-log">{{ theme_sync.initial_log }}</p></div>
       </aside>
     </div>
     <footer class="breach-footer">
-      <div><span id="breach-status">INITIALIZING NEURAL HANDSHAKE</span><small id="breach-targets"></small></div>
-      <div class="breach-progress"><i id="breach-progress"></i></div>
-      <strong id="breach-percent">00%</strong>
+      <span>{{ theme_sync.live }}</span>
+      <div class="breach-progress"><i data-breach-progress></i></div>
+      <small>{{ theme_sync.caution }}</small>
     </footer>
   </div>
 </div>
 
 <script>
-// Passive network-yield ticker: cleared contracts keep generating eurodollars.
-(function () {
-  const hud = document.querySelector('.streetcred-hud');
-  const counter = document.querySelector('.credit-counter');
-  if (!hud || !counter) return;
-  const perSecond = (parseFloat(hud.dataset.rate) || 0) / 3600;
-  const start = parseFloat(hud.dataset.banked) || 0;
-  const t0 = performance.now();
-  function tick(now) {
-    const credits = start + perSecond * (now - t0) / 1000;
-    counter.textContent = Math.floor(credits).toLocaleString();
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-})();
+const DIALECT = {{ theme_dialect|tojson }};
+const SYNC_COPY = {{ theme_sync|tojson }};
 function selectMission(button) {
   const wrap = button.closest('.issue-row-wrap');
   const selected = [...document.querySelectorAll('.issue-row.selected')];
   if (!button.classList.contains('selected') && selected.length >= 3) {
-    alert('You can run up to 3 tickets at a time.');
+    alert(`You can choose up to 3 ${DIALECT.missions} at a time.`);
     return;
   }
   button.classList.toggle('selected');
   const urls = [...document.querySelectorAll('.issue-row.selected')].map(row => row.closest('.issue-row-wrap').dataset.url);
-  document.getElementById('issue-url').value = urls.length ? `${urls.length} ticket${urls.length === 1 ? '' : 's'} selected` : '';
+  document.getElementById('issue-url').value = urls.length ? `${urls.length} ${DIALECT.mission}${urls.length === 1 ? '' : 's'} selected` : '';
   document.getElementById('selected-issues').replaceChildren(...urls.map(url => { const input = document.createElement('input'); input.type = 'hidden'; input.name = 'issue_url'; input.value = url; return input; }));
   const state = document.getElementById('loadout-state');
-  state.textContent = urls.length ? `${urls.length} target${urls.length === 1 ? '' : 's'} locked` : 'ready';
+  state.textContent = urls.length ? `${urls.length} ${DIALECT.mission}${urls.length === 1 ? '' : 's'} selected` : DIALECT.loadout_ready;
   state.classList.toggle('locked', urls.length > 0);
   if (urls.length === 1) document.getElementById('mission-form').scrollIntoView({behavior: 'smooth', block: 'center'});
 }
@@ -270,7 +363,13 @@ function hideBounty(wrap) {
 }
 function sortBounties(kind) {
   const list = document.querySelector('.issue-list');
-  [...list.querySelectorAll('.issue-row-wrap')].sort((a,b) => kind === 'title' ? a.dataset.title.localeCompare(b.dataset.title) : kind === 'updated' ? b.dataset.updated.localeCompare(a.dataset.updated) : (['P0','P1','P2',''].indexOf(a.dataset.priority) - ['P0','P1','P2',''].indexOf(b.dataset.priority))).forEach(row => list.appendChild(row));
+  [...list.querySelectorAll('.issue-row-wrap')].sort((a,b) => {
+    if (kind === 'title') return a.dataset.title.localeCompare(b.dataset.title);
+    if (kind === 'updated') return b.dataset.updated.localeCompare(a.dataset.updated);
+    if (kind === 'number-asc') return parseInt(a.dataset.number) - parseInt(b.dataset.number);
+    if (kind === 'number-desc') return parseInt(b.dataset.number) - parseInt(a.dataset.number);
+    return ['P0','P1','P2',''].indexOf(a.dataset.priority) - ['P0','P1','P2',''].indexOf(b.dataset.priority);
+  }).forEach(row => list.appendChild(row));
 }
 function toModel(command, model) {
   let out = command.includes('-c \'model=')
@@ -289,12 +388,23 @@ function launchWithModel(form, model) {
   form.requestSubmit();
 }
 function launchHigh(form) { launchWithModel(form, 'gpt-5.6-sol'); }
-function launchUltra(form) { launchWithModel(form, 'gpt-5.6-luna'); }
+function launchInstant(form) {
+  form.agent_provider.value = 'custom';
+  form.review_provider.value = 'custom';
+  const command = `/home/claytongatting/.npm-global/bin/codex exec -c 'model="gpt-5.6-luna"' -c 'model_reasoning_effort="low"' --sandbox workspace-write --skip-git-repo-check --json -`;
+  form.agent_command.value = command;
+  form.review_command.value = command;
+  form.requestSubmit();
+}
+function withClaudeModel(command, model) {
+  const modelFlag = /--model\s+(?:"[^"]*"|'[^']*'|\S+)/;
+  return modelFlag.test(command) ? command.replace(modelFlag, `--model ${model}`) : `${command} --model ${model}`;
+}
 function launchClaude(form, model) {
   form.agent_provider.value = 'custom';
   form.review_provider.value = 'custom';
   const base = {{ defaults.claude_command|tojson }};
-  const command = `${base} --model ${model}`;
+  const command = withClaudeModel(base, model);
   form.agent_command.value = command;
   form.review_command.value = command;
   form.requestSubmit();
@@ -336,97 +446,79 @@ function markBreachCandidates(cells, path, step) {
   });
 }
 
-function runBreachProtocol(repositories) {
+function runBreachProtocol(repositories, pending) {
   const overlay = document.getElementById('breach-protocol');
   const matrix = document.getElementById('breach-matrix');
   const buffer = document.getElementById('breach-buffer');
   const status = document.getElementById('breach-status');
   const time = document.getElementById('breach-time');
-  const progress = document.getElementById('breach-progress');
+  const progressBars = [...overlay.querySelectorAll('[data-breach-progress]')];
   const percent = document.getElementById('breach-percent');
   const bufferCount = document.getElementById('breach-buffer-count');
-  const daemonRows = [...overlay.querySelectorAll('.daemon-row')];
-  const size = 8;
-  const path = createBreachPath(size, 6);
-  const values = Array.from({length: size * size}, () => BREACH_CODES[Math.floor(Math.random() * BREACH_CODES.length)]);
+  const stages = [...overlay.querySelectorAll('.breach-stages li')];
+  const log = document.getElementById('breach-log');
 
   overlay.className = 'breach-protocol active';
   overlay.hidden = false;
   document.body.classList.add('breach-active');
-  document.getElementById('breach-targets').textContent = `TARGETS // ${repositories.join(' · ')}`;
+  document.getElementById('breach-targets').replaceChildren(...repositories.map(repository => {
+    const chip = document.createElement('span');
+    chip.textContent = repository;
+    return chip;
+  }));
   matrix.replaceChildren();
-  buffer.replaceChildren();
-  daemonRows.forEach((row, index) => {
-    row.className = `daemon-row${index === 0 ? ' active' : ''}`;
-    row.querySelector('i').textContent = index === 0 ? 'UPLOAD' : 'QUEUED';
+  stages.forEach((stage, index) => {
+    stage.className = index === 0 ? 'active' : '';
+    stage.querySelector('b').textContent = index === 0 ? 'RUNNING' : 'QUEUED';
   });
+  const terminalLines = SYNC_COPY.terminal_lines;
+  matrix.replaceChildren(...terminalLines.map(line => { const node = document.createElement('div'); node.textContent = line; return node; }));
 
-  const cells = values.map((value, index) => {
-    const cell = document.createElement('span');
-    cell.className = 'breach-code';
-    cell.dataset.row = Math.floor(index / size);
-    cell.dataset.col = index % size;
-    cell.textContent = value;
-    matrix.appendChild(cell);
-    return cell;
-  });
-  path.forEach(() => {
-    const slot = document.createElement('span');
-    slot.textContent = '--';
-    buffer.appendChild(slot);
-  });
-  markBreachCandidates(cells, path, 0);
+  const sequence = SYNC_COPY.sequence.map((step, index) => ({...step, at: index * 2500}));
 
-  const messages = [
-    'SCANNING CODE MATRIX',
-    'BUFFER LINK ESTABLISHED',
-    'GITHUB UPLINK ACQUIRED',
-    'DECODING THREAT SIGNATURES',
-    'REBUILDING CONTRACT INDEX',
-    'EXECUTING UPLOADED DAEMONS',
-  ];
-
-  path.forEach((coordinate, index) => {
+  sequence.forEach((step, index) => {
     setTimeout(() => {
-      const cell = cells[coordinate.row * size + coordinate.col];
-      cell.classList.remove('candidate');
-      cell.classList.add('selected');
-      const slot = buffer.children[index];
-      slot.textContent = cell.textContent;
-      slot.classList.add('filled');
-      bufferCount.textContent = `${index + 1} / ${path.length}`;
-      status.textContent = messages[index];
-      markBreachCandidates(cells, path, index + 1);
-      if (index === 1) {
-        daemonRows[0].className = 'daemon-row complete';
-        daemonRows[0].querySelector('i').textContent = 'INSTALLED';
-        daemonRows[1].className = 'daemon-row active';
-        daemonRows[1].querySelector('i').textContent = 'UPLOAD';
-      } else if (index === 3) {
-        daemonRows[1].className = 'daemon-row complete';
-        daemonRows[1].querySelector('i').textContent = 'INSTALLED';
-        daemonRows[2].className = 'daemon-row active';
-        daemonRows[2].querySelector('i').textContent = 'UPLOAD';
-      } else if (index === 5) {
-        daemonRows[2].className = 'daemon-row complete';
-        daemonRows[2].querySelector('i').textContent = 'INSTALLED';
+      stages.forEach((stage, stageIndex) => {
+        stage.className = stageIndex < index ? 'complete' : stageIndex === index ? 'active' : '';
+        stage.querySelector('b').textContent = stageIndex < index ? 'DONE' : stageIndex === index ? 'RUNNING' : 'QUEUED';
+      });
+      bufferCount.textContent = `${String(index + 1).padStart(2, '0')} / 04`;
+      status.textContent = step.status;
+      log.textContent = step.log;
+      const line = document.createElement('div');
+      line.className = 'terminal-line terminal-line-live';
+      line.textContent = `${SYNC_COPY.line_prefix ?? '> '}${step.log}`;
+      matrix.appendChild(line);
+      matrix.scrollTop = matrix.scrollHeight;
+      const parchment = overlay.querySelector('.scroll-parchment');
+      if (parchment) {
+        parchment.classList.remove('is-writing');
+        void parchment.offsetWidth;
+        parchment.classList.add('is-writing');
+        setTimeout(() => parchment.classList.remove('is-writing'), 1450);
       }
-    }, 1100 + index * 1250);
+    }, step.at);
   });
 
   return new Promise(resolve => {
-    const duration = 10000;
+    const minDuration = 10000;
+    let syncSettled = !pending;
+    if (pending) pending.then(() => { syncSettled = true; }, () => { syncSettled = true; });
     const started = performance.now();
     function tick(now) {
-      const elapsed = Math.min(duration, now - started);
-      const ratio = elapsed / duration;
-      const value = Math.min(99, Math.floor(ratio * 100));
-      time.textContent = Math.max(0, (duration - elapsed) / 1000).toFixed(1);
-      progress.style.width = `${value}%`;
+      const elapsed = now - started;
+      // Ease toward 99% so long syncs keep visibly moving instead of stalling.
+      const value = Math.min(99, Math.floor((1 - Math.exp(-elapsed / 7000)) * 104));
+      time.textContent = (elapsed / 1000).toFixed(1);
+      progressBars.forEach(progress => { progress.style.width = `${value}%`; });
+      overlay.querySelectorAll('[data-breach-health]').forEach(health => { health.style.width = `${100 - value}%`; });
       percent.textContent = `${String(value).padStart(2, '0')}%`;
-      if (elapsed < duration) requestAnimationFrame(tick);
+      if (elapsed < minDuration || !syncSettled) requestAnimationFrame(tick);
       else {
-        status.textContent = 'AWAITING NETWORK RESPONSE';
+        stages.forEach(stage => { stage.className = 'complete'; stage.querySelector('b').textContent = 'DONE'; });
+        bufferCount.textContent = '04 / 04';
+        status.textContent = SYNC_COPY.confirm_status;
+        log.textContent = SYNC_COPY.confirm_log;
         resolve();
       }
     }
@@ -438,8 +530,10 @@ function finishBreachProtocol(success, message) {
   const overlay = document.getElementById('breach-protocol');
   overlay.classList.add(success ? 'success' : 'failed');
   document.getElementById('breach-status').textContent = message;
-  document.getElementById('breach-progress').style.width = '100%';
+  overlay.querySelectorAll('[data-breach-progress]').forEach(progress => { progress.style.width = '100%'; });
+  overlay.querySelectorAll('[data-breach-health]').forEach(health => { health.style.width = success ? '0%' : '100%'; });
   document.getElementById('breach-percent').textContent = '100%';
+  document.getElementById('breach-log').textContent = success ? SYNC_COPY.success_log : SYNC_COPY.failure_log;
 }
 
 function closeBreachProtocol() {
@@ -448,10 +542,14 @@ function closeBreachProtocol() {
 }
 
 async function resyncBounties(button) {
-  const repos = [...new Set([...document.querySelectorAll('.issue-row-wrap')].map(row => row.dataset.url.split('/').slice(3,5).join('/')))];
-  if (!repos.length) { alert('No contract signals are available to breach. Scan a repository from the Prompt Forge first.'); return; }
+  localStorage.removeItem('mergequest-hidden-bounties');
+  const repos = [...new Set([
+    'pvfscaffolding/crm-staff-desktop',
+    'pvfscaffolding/crm-api',
+    ...[...document.querySelectorAll('.issue-row-wrap')].map(row => row.dataset.url.split('/').slice(3,5).join('/')),
+  ])];
   button.disabled = true;
-  button.textContent = 'Breach active...';
+  button.textContent = SYNC_COPY.button_active;
   try {
     const syncOutcome = Promise.all(repos.map(async repository => {
       const res = await fetch('/tickets/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({repository})});
@@ -459,20 +557,20 @@ async function resyncBounties(button) {
       if (!res.ok) throw new Error(`${repository}: ${data.error || res.status}`);
       return data;
     })).then(results => ({results}), error => ({error}));
-    const [, outcome] = await Promise.all([runBreachProtocol(repos), syncOutcome]);
+    const [, outcome] = await Promise.all([runBreachProtocol(repos, syncOutcome), syncOutcome]);
     if (outcome.error) {
-      finishBreachProtocol(false, 'BREACH FAILED // ICE REJECTED UPLINK');
+      finishBreachProtocol(false, SYNC_COPY.failure_status);
       await delay(900);
       closeBreachProtocol();
       throw outcome.error;
     }
-    finishBreachProtocol(true, 'BREACH COMPLETE // CONTRACT SHARDS ACQUIRED');
+    finishBreachProtocol(true, SYNC_COPY.success_status);
     await delay(900);
     location.reload();
   } catch (err) {
-    alert('Breach failed: ' + err.message);
+    alert(SYNC_COPY.error_prefix + err.message);
     button.disabled = false;
-    button.textContent = 'Breach // Resync';
+    button.textContent = SYNC_COPY.button_idle;
   }
 }
 function escapeHtml(value) {
@@ -504,9 +602,9 @@ async function generateTestPlan(button) {
     if (plan.repro_steps && plan.repro_steps.length) html += '<strong>Steps to reproduce</strong><ol>' + plan.repro_steps.map(s => `<li>${escapeHtml(s)}</li>`).join('') + '</ol>';
     if (plan.pass_steps && plan.pass_steps.length) html += '<strong>Steps to verify the fix</strong><ol>' + plan.pass_steps.map(s => `<li>${escapeHtml(s)}</li>`).join('') + '</ol>';
     body.innerHTML = html || '<em>No steps returned.</em>';
-    wrap.querySelector('.test-plan summary').textContent = 'RECON PROTOCOL // LOADED';
+    wrap.querySelector('.test-plan summary').textContent = `${DIALECT.briefing} // LOADED`;
   } catch (err) {
-    button.disabled = false; button.textContent = 'Compile recon protocol';
+    button.disabled = false; button.textContent = `Prepare ${DIALECT.briefing.toLowerCase()}`;
     alert(err.message);
   }
 }

@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +14,10 @@ from openpyxl import load_workbook
 
 
 _REPOSITORY_PATTERN = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
+# These are the only GitHub Projects that are valid sources for tickets in the
+# application. Keep this as project numbers (not URLs) because GitHub exposes
+# the number on ProjectV2 items.
+ALLOWED_PROJECT_NUMBERS = frozenset({6, 11})
 
 
 def _text(value: object) -> str:
@@ -29,6 +34,12 @@ def _gh_candidates() -> list[Path]:
     discovered = shutil.which('gh')
     if discovered:
         candidates.append(Path(discovered))
+
+    # Support packaged launches where the bundled CLI sits beside the app
+    # executable (or in PyInstaller's temporary extraction directory), even
+    # when the parent process did not preserve its PATH.
+    bundle_root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
+    candidates.extend((bundle_root / 'gh', bundle_root / 'gh.exe'))
 
     program_files = os.getenv('ProgramFiles')
     if program_files:
@@ -131,41 +142,42 @@ def _github_headers(token: str) -> dict[str, str]:
 
 def _fetch_github_issues(repository: str, state: str, limit: int, token: str | None) -> list[dict]:
     resolved_token = _github_token(token)
+    # GitHub caps a single response at 100 items. Keep the first request's
+    # shape backwards-compatible, then follow subsequent pages when a full
+    # page indicates that older issues may still exist.
+    page_size = min(max(limit, 1), 100)
     if repository:
         url = f'https://api.github.com/repos/{repository}/issues'
-        params: dict[str, object] = {'state': state, 'per_page': min(limit, 100)}
+        params: dict[str, object] = {'state': state, 'per_page': page_size}
     else:
         url = 'https://api.github.com/search/issues'
-        params = {'q': f'state:{state} is:issue', 'per_page': min(limit, 100)}
+        params = {'q': f'state:{state} is:issue', 'per_page': page_size}
 
-    try:
-        response = requests.get(
-            url,
-            params=params,
-            headers=_github_headers(resolved_token),
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        raise RuntimeError(f'Could not connect to GitHub: {exc}') from exc
-
-    if response.status_code >= 400:
-        result = subprocess.CompletedProcess(
-            args=['GET', url],
-            returncode=1,
-            stdout='',
-            stderr=f'{response.text} (HTTP {response.status_code})',
-        )
-        raise _github_api_error(repository, result)
-
-    try:
-        payload = response.json()
-    except requests.exceptions.JSONDecodeError as exc:
-        raise RuntimeError('GitHub returned a response that was not valid JSON.') from exc
-
-    items = payload.get('items', []) if isinstance(payload, dict) else payload
-    if not isinstance(items, list):
-        raise RuntimeError('GitHub returned an unexpected issue-list response.')
-    return items
+    all_items: list[dict] = []
+    page = 1
+    while len(all_items) < limit:
+        page_params = dict(params)
+        if page > 1:
+            page_params['page'] = page
+        try:
+            response = requests.get(url, params=page_params, headers=_github_headers(resolved_token), timeout=30)
+        except requests.RequestException as exc:
+            raise RuntimeError(f'Could not connect to GitHub: {exc}') from exc
+        if response.status_code >= 400:
+            result = subprocess.CompletedProcess(args=['GET', url], returncode=1, stdout='', stderr=f'{response.text} (HTTP {response.status_code})')
+            raise _github_api_error(repository, result)
+        try:
+            payload = response.json()
+        except requests.exceptions.JSONDecodeError as exc:
+            raise RuntimeError('GitHub returned a response that was not valid JSON.') from exc
+        page_items = payload.get('items', []) if isinstance(payload, dict) else payload
+        if not isinstance(page_items, list):
+            raise RuntimeError('GitHub returned an unexpected issue-list response.')
+        all_items.extend(page_items)
+        if len(page_items) < page_size:
+            break
+        page += 1
+    return all_items[:limit]
 
 
 def _github_graphql(query: str, token: str) -> dict | None:
@@ -191,7 +203,7 @@ def _project_metadata(repository: str, issue_numbers: list[int], token: str) -> 
     for start in range(0, len(issue_numbers), 20):
         numbers = issue_numbers[start:start + 20]
         fields = ' '.join(
-            f'i{number}: issue(number: {number}) {{ projectItems(first: 10) {{ nodes {{ fieldValues(first: 30) {{ nodes {{ ... on ProjectV2ItemFieldSingleSelectValue {{ name field {{ ... on ProjectV2SingleSelectField {{ name }} }} }} }} }} }} }} }}'
+            f'i{number}: issue(number: {number}) {{ projectItems(first: 30) {{ nodes {{ project {{ number }} fieldValues(first: 30) {{ nodes {{ ... on ProjectV2ItemFieldSingleSelectValue {{ name field {{ ... on ProjectV2SingleSelectField {{ name }} }} }} }} }} }} }} timelineItems(first: 50) {{ nodes {{ ... on CrossReferencedEvent {{ source {{ ... on PullRequest {{ number }} }} }} }} }} }}'
             for number in numbers
         )
         query = f'query {{ repository(owner: "{owner}", name: "{name}") {{ {fields} }} }}'
@@ -201,6 +213,13 @@ def _project_metadata(repository: str, issue_numbers: list[int], token: str) -> 
             data = (_github_graphql(query, token) or {})['data']['repository']
             for number in numbers:
                 for item in (data.get(f'i{number}') or {}).get('projectItems', {}).get('nodes', []):
+                    project_number = (item.get('project') or {}).get('number')
+                    # Older API responses/mocks may omit project identity. Keep
+                    # those readable for compatibility; real GitHub responses
+                    # always include it because it is requested above.
+                    if project_number is not None and int(project_number) not in ALLOWED_PROJECT_NUMBERS:
+                        continue
+                    metadata.setdefault(number, {})['project_number'] = _text(project_number)
                     for value in item.get('fieldValues', {}).get('nodes', []):
                         field_name = value.get('field', {}).get('name')
                         if field_name in {'Project Priority', 'Priority'}:
@@ -209,6 +228,14 @@ def _project_metadata(repository: str, issue_numbers: list[int], token: str) -> 
                                 metadata.setdefault(number, {})['priority'] = priority
                         elif field_name in {'Project Status', 'Status'} and value.get('name'):
                             metadata.setdefault(number, {})['project_status'] = _text(value.get('name'))
+                issue_data = data.get(f'i{number}') or {}
+                linked_prs = [
+                    node.get('source', {}).get('number')
+                    for node in issue_data.get('timelineItems', {}).get('nodes', [])
+                    if (node.get('source') or {}).get('number')
+                ]
+                if linked_prs:
+                    metadata.setdefault(number, {})['has_attached_pr'] = 'true'
         except (KeyError, TypeError, json.JSONDecodeError):
             continue
     return metadata
@@ -247,7 +274,7 @@ def import_workbook(path: Path) -> list[dict]:
     return tickets
 
 
-def sync_github(repository: str = '', state: str = 'open', limit: int = 100, token: str | None = None) -> list[dict]:
+def sync_github(repository: str = '', state: str = 'open', limit: int = 1000, token: str | None = None) -> list[dict]:
     repository = repository.strip()
     if repository and not _REPOSITORY_PATTERN.fullmatch(repository):
         raise ValueError('Repository must use the `owner/repository` format.')
@@ -274,4 +301,8 @@ def sync_github(repository: str = '', state: str = 'open', limit: int = 100, tok
                         'priority': priority, 'project_status': metadata.get('project_status', ''), 'issue_type': 'Issue',
                         'created_at': issue.get('created_at', ''), 'updated_at': issue.get('updated_at', ''),
                         'synced_at': now, 'source': 'github'})
+    for ticket in tickets:
+        ticket['has_attached_pr'] = int(
+            project_metadata.get(ticket['number'], {}).get('has_attached_pr') == 'true'
+        )
     return tickets
