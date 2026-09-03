@@ -31,6 +31,10 @@ class Settings:
         "REVIEW_COMMAND",
         "/home/claytongatting/.npm-global/bin/codex exec --sandbox workspace-write --ask-for-approval never -",
     )
+    opencode_command: str = os.getenv(
+        "OPENCODE_COMMAND",
+        "opencode run --model opencode/big-pickle",
+    )
     claude_command: str = os.getenv(
         "CLAUDE_COMMAND",
         "claude -p --model claude-haiku-4-5 --output-format stream-json --verbose --dangerously-skip-permissions",

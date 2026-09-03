@@ -80,7 +80,7 @@ class FakeTestingGitHub:
         }
 
 
-def testing_settings(workspace, tmp_path, **overrides):
+def _testing_settings(workspace, tmp_path, **overrides):
     defaults = dict(
         local_repo_path=workspace,
         workspace_root=tmp_path / "artifacts",
@@ -97,6 +97,11 @@ def testing_settings(workspace, tmp_path, **overrides):
     return SimpleNamespace(**defaults)
 
 
+# keep old name as alias for backwards-compat, but hide from pytest collection
+testing_settings = _testing_settings
+testing_settings.__test__ = False  # type: ignore[attr-defined]
+
+
 def test_integrity_scanner_checks_both_repositories_before_project_transition(
     monkeypatch, tmp_path,
 ):
@@ -107,7 +112,7 @@ def test_integrity_scanner_checks_both_repositories_before_project_transition(
     store = FakeTestingStore(
         "https://github.com/acme/crm-staff-desktop/issues/7",
     )
-    settings = testing_settings(
+    settings = _testing_settings(
         workspace, tmp_path,
         agent_command="agent",
         claude_command="claude",
@@ -165,7 +170,7 @@ def test_integrity_scanner_uses_testing_attempt_limit(monkeypatch, tmp_path):
     workspace = tmp_path / "CRM_APP_PVF"
     (workspace / "crm-staff-desktop" / ".git").mkdir(parents=True)
     store = FakeTestingStore("https://github.com/acme/crm-staff-desktop/issues/7")
-    settings = testing_settings(workspace, tmp_path, max_gate_attempts=15, testing_max_attempts=3)
+    settings = _testing_settings(workspace, tmp_path, max_gate_attempts=15, testing_max_attempts=3)
     fake_github = FakeTestingGitHub()
     attempts = []
     notifications = []
@@ -204,7 +209,7 @@ def test_integrity_scanner_failed_report_notifies_fail(monkeypatch, tmp_path):
     workspace = tmp_path / "CRM_APP_PVF"
     (workspace / "crm-staff-desktop" / ".git").mkdir(parents=True)
     store = FakeTestingStore("https://github.com/acme/crm-staff-desktop/issues/7")
-    settings = testing_settings(workspace, tmp_path)
+    settings = _testing_settings(workspace, tmp_path)
     fake_github = FakeTestingGitHub()
     notifications = []
 
@@ -244,7 +249,7 @@ def test_integrity_scanner_recovers_text_verdict_when_json_report_missing(monkey
     workspace = tmp_path / "CRM_APP_PVF"
     (workspace / "crm-staff-desktop" / ".git").mkdir(parents=True)
     store = FakeTestingStore("https://github.com/acme/crm-staff-desktop/issues/7")
-    settings = testing_settings(workspace, tmp_path)
+    settings = _testing_settings(workspace, tmp_path)
     fake_github = FakeTestingGitHub()
     notifications = []
 
@@ -288,7 +293,7 @@ def test_integrity_scanner_uses_report_written_before_timeout(monkeypatch, tmp_p
     workspace = tmp_path / "CRM_APP_PVF"
     (workspace / "crm-staff-desktop" / ".git").mkdir(parents=True)
     store = FakeTestingStore("https://github.com/acme/crm-staff-desktop/issues/7")
-    settings = testing_settings(workspace, tmp_path)
+    settings = _testing_settings(workspace, tmp_path)
     fake_github = FakeTestingGitHub()
     attempts = []
 
@@ -325,7 +330,7 @@ def test_integrity_scanner_hands_prior_work_to_escalated_model(monkeypatch, tmp_
     workspace = tmp_path / "CRM_APP_PVF"
     (workspace / "crm-staff-desktop" / ".git").mkdir(parents=True)
     store = FakeTestingStore("https://github.com/acme/crm-staff-desktop/issues/7")
-    settings = testing_settings(workspace, tmp_path, testing_max_attempts=2)
+    settings = _testing_settings(workspace, tmp_path, testing_max_attempts=2)
     fake_github = FakeTestingGitHub()
     prompts = []
 

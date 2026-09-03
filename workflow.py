@@ -365,6 +365,8 @@ class WorkflowRunner:
             return self.settings.claude_command
         if provider == "codex":
             return self.settings.agent_command if role == "agent" else self.settings.review_command
+        if provider == "opencode":
+            return self.settings.opencode_command
         return (custom or "").strip()
 
     def _load_testing_result(self, job_id: str, result_path: Path, log) -> dict:
@@ -895,6 +897,39 @@ class WorkflowRunner:
                     name: path for name, path in repo_dirs.items() if github.has_changes(path)
                 }
                 if not changed_repos:
+                    if result.get("safe_to_pr") is True and result.get("root_cause"):
+                        # The agent investigated and concluded, with evidence, that this
+                        # repository needs no code change (e.g. the real fix already landed
+                        # elsewhere, or the bug lives entirely in another service). That is
+                        # a legitimate outcome, not a failed run — report it and stop instead
+                        # of raising a generic "no changes" error.
+                        no_change_result = {
+                            "ticket_url": issue["html_url"], "repository": issue_ref.full_name,
+                            "issue_number": issue_ref.number, "base_branch": base_branch,
+                            "branch_name": branch_name, "pr_url": None, "pr_urls": {},
+                            "confidence": result["confidence"], "summary": result["summary"],
+                            "root_cause": result["root_cause"], "code_written": False,
+                            "no_change_needed": True,
+                            "unresolved_risks": result.get("unresolved_risks") or [],
+                            "completion_requirements": result.get("completion_requirements") or [],
+                            "pr_notes": result.get("pr_notes") or "",
+                        }
+                        self.store.update(
+                            job_id, status="completed", stage="No change needed",
+                            result_json=no_change_result,
+                        )
+                        if params.get("comment_on_failure", self.settings.comment_on_failure):
+                            try:
+                                github.comment_on_issue(
+                                    issue_ref,
+                                    self._no_change_comment(result),
+                                    artifact_dir,
+                                )
+                                log("Posted no-change-needed explanation on the original ticket.")
+                            except Exception as comment_exc:  # noqa: BLE001 - best-effort notification
+                                log(f"Could not post explanation on the ticket: {comment_exc}")
+                        log("Completed: agent found no source change is needed in this repository.")
+                        return
                     raise WorkflowError("The coding agent completed without producing any source changes.")
                 log("Repositories changed: " + ", ".join(changed_repos))
 
@@ -1627,6 +1662,35 @@ class WorkflowRunner:
             "Once the items above are addressed, this ticket can be run through investigation, "
             "validation, and review again."
         )
+        return "\n\n".join(sections)
+
+    @staticmethod
+    def _no_change_comment(result: dict) -> str:
+        sections: list[str] = [
+            "## ℹ️ No code change needed in this repository",
+            "The automated agent investigated this ticket and concluded, with evidence, that no "
+            "source change is required here.",
+        ]
+        if result.get("root_cause"):
+            sections.append(f"**Root cause:** {result['root_cause']}")
+        if result.get("summary"):
+            sections.append(f"**Investigation summary:** {result['summary']}")
+
+        requirements = [str(item) for item in (result.get("completion_requirements") or []) if str(item).strip()]
+        if requirements:
+            sections.append(
+                "### Still required to fully close this ticket\n"
+                + "\n".join(f"- [ ] {item}" for item in requirements)
+            )
+
+        risks = [str(item) for item in (result.get("unresolved_risks") or []) if str(item).strip()]
+        if risks:
+            sections.append("**Unresolved risks:**\n" + "\n".join(f"- {item}" for item in risks))
+
+        if result.get("pr_notes"):
+            sections.append(f"**Notes:** {result['pr_notes']}")
+
+        sections.append(f"Confidence: {round(float(result.get('confidence') or 0) * 100)}%")
         return "\n\n".join(sections)
 
     def _get_cached_test_plan(self, issue_ref) -> dict | None:

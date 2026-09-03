@@ -163,7 +163,7 @@ class JobStore:
         query = "SELECT tickets.*, ticket_tests.repro_steps AS test_repro_steps, ticket_tests.pass_steps AS test_pass_steps FROM tickets LEFT JOIN ticket_tests ON ticket_tests.key = tickets.key"
         params: list[object] = []
         if state:
-            query += " WHERE upper(state) = upper(?) AND replace(lower(trim(project_status)), '-', ' ') NOT LIKE 'in progress%' AND lower(trim(project_status)) NOT IN ('done', 'ready for build', 'closed', 'complete', 'completed', 'pr ready')"
+            query += " WHERE upper(state) = upper(?) AND lower(trim(project_status)) IN ('triage', 'backlog', 'awaiting design')"
             params.append(state)
         query += " ORDER BY CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END, CASE WHEN lower(labels) LIKE '%regression%' THEN 0 WHEN lower(labels) LIKE '%bug%' THEN 1 ELSE 2 END, CASE lower(trim(project_status)) WHEN 'ready for build' THEN 0 WHEN 'in progress' THEN 1 ELSE 2 END, updated_at ASC"
         if limit is not None:

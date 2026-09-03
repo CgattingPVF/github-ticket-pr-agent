@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import webbrowser
+import urllib.request
 from pathlib import Path
 
 from authlib.integrations.flask_client import OAuth
@@ -1443,6 +1444,65 @@ def home():
     return redirect(url_for('index'))
 
 
+# Curated shortlist of free OpenCode models, ranked by SWE-bench Pro score (where
+# published) from vendor/benchmark reports. models.dev has no benchmark data of its
+# own, so this list is maintained by hand rather than derived from the live catalog.
+CURATED_MODELS = [
+    {'rank': 1, 'id': 'kenari/claude-fable-5', 'name': 'Claude Fable 5', 'context': 1000000, 'swe_score': 80.0, 'notes': 'Frontier coding / agentic model'},
+    {'rank': 2, 'id': 'kenari/claude-opus-5', 'name': 'Claude Opus 5', 'context': 1000000, 'swe_score': 79.2, 'notes': 'Hard repo-level coding and autonomous agent work'},
+    {'rank': 3, 'id': 'kenari/claude-opus-4-8', 'name': 'Claude Opus 4.8', 'context': 1000000, 'swe_score': 69.2, 'notes': 'Strong repo-level coding'},
+    {'rank': 4, 'id': 'alibaba-token-plan/qwen3.8-max', 'name': 'Qwen3.8 Max', 'context': 1000000, 'swe_score': 67.7, 'notes': 'Large-context coding / agentic model'},
+    {'rank': 5, 'id': 'kenari/gpt-5-6-sol', 'name': 'GPT-5.6 Sol', 'context': 1050000, 'swe_score': 64.6, 'notes': 'General coding, reasoning and tool use'},
+    {'rank': 6, 'id': 'kenari/gpt-5-6-terra', 'name': 'GPT-5.6 Terra', 'context': 1050000, 'swe_score': 63.4, 'notes': 'General coding and agentic work'},
+    {'rank': 7, 'id': 'kenari/claude-sonnet-5', 'name': 'Claude Sonnet 5', 'context': 1000000, 'swe_score': 63.2, 'notes': 'Strong daily-driver coding agent'},
+    {'rank': 8, 'id': 'kenari/gpt-5-6-luna', 'name': 'GPT-5.6 Luna', 'context': 1050000, 'swe_score': 62.7, 'notes': 'General coding and agentic work'},
+    {'rank': 9, 'id': 'alibaba-token-plan/glm-5.2', 'name': 'GLM-5.2', 'context': 1000000, 'swe_score': 62.1, 'notes': 'Coding and long-context agent work'},
+    {'rank': 10, 'id': 'ovhcloud/qwen3.8-27b', 'name': 'Qwen3.8 27B', 'context': 262000, 'swe_score': 61.7, 'notes': 'Smaller Qwen coding option'},
+    {'rank': 11, 'id': 'alibaba-token-plan/qwen3.7-max', 'name': 'Qwen3.7 Max', 'context': 1000000, 'swe_score': 60.6, 'notes': 'Large-context coding model'},
+    {'rank': 12, 'id': 'poolside/poolside/laguna-s-2.1', 'name': 'Laguna S 2.1', 'context': 1048576, 'swe_score': 59.4, 'notes': 'Software-engineering focused'},
+    {'rank': 13, 'id': 'kenari/gpt-5-5', 'name': 'GPT-5.5', 'context': 1050000, 'swe_score': 59.4, 'notes': 'General coding / agentic model'},
+    {'rank': 14, 'id': 'kenari/minimax-m3', 'name': 'MiniMax M3', 'context': 1000000, 'swe_score': 59.0, 'notes': 'Long-context coding option'},
+    {'rank': 15, 'id': 'kenari/minimax-m2-7', 'name': 'MiniMax M2.7', 'context': 204800, 'swe_score': 56.2, 'notes': 'Lower-cost coding option'},
+    {'rank': 16, 'id': 'alibaba-token-plan/deepseek-v4-pro-0813', 'name': 'DeepSeek V4 Pro', 'context': 1000000, 'swe_score': 55.4, 'notes': 'Reasoning-heavy coding model'},
+    {'rank': 17, 'id': 'kenari/gemini-3-1-pro', 'name': 'Gemini 3.1 Pro', 'context': 1048000, 'swe_score': 54.2, 'notes': 'Large-codebase analysis and coding'},
+    {'rank': 18, 'id': 'alibaba-token-plan/deepseek-v4-flash-0731', 'name': 'DeepSeek V4 Flash', 'context': 1000000, 'swe_score': 52.6, 'notes': 'Published max-reasoning configuration'},
+    {'rank': 19, 'id': 'umans-ai-coding-plan/umans-qwen3.6-35b-a3b', 'name': 'Qwen3.6 35B-A3B', 'context': 262000, 'swe_score': 51.2, 'notes': 'MoE coding / agentic model'},
+    {'rank': 20, 'id': 'alibaba-coding-plan-cn/qwen3-coder-next', 'name': 'Qwen3-Coder Next', 'context': 262000, 'swe_score': 70.6, 'notes': 'Dedicated coding model; SWE-bench Verified, not directly comparable with Pro'},
+    {'rank': 21, 'id': 'kenari/kimi-k3', 'name': 'Kimi K3', 'context': 1000000, 'swe_score': None, 'notes': 'Long-horizon coding model; no clean comparable SWE-bench Pro score'},
+    {'rank': 22, 'id': 'alibaba-token-plan/kimi-k2.7-code', 'name': 'Kimi K2.7 Code', 'context': 262000, 'swe_score': None, 'notes': 'Dedicated coding model'},
+    {'rank': 23, 'id': 'cohere/north-mini-code-1-0', 'name': 'North Mini Code', 'context': 256000, 'swe_score': None, 'notes': 'Dedicated coding model'},
+    {'rank': 24, 'id': 'mistral/labs-devstral-small-2512', 'name': 'Devstral Small 2', 'context': 256000, 'swe_score': None, 'notes': 'Agentic software-engineering model'},
+]
+
+
+@app.get('/api/opencode/models')
+def opencode_models():
+    """Return the curated shortlist of free OpenCode models, enriched with live
+    thinking/variant options from models.dev, dropping any entry that models.dev no
+    longer lists as free (or no longer lists at all)."""
+    variants_by_id = {}
+    free_ids = None
+    try:
+        req = urllib.request.Request('https://models.dev/api.json', headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=8) as response:
+            catalog = json.load(response)
+        free_ids = set()
+        for provider_id, provider in catalog.items():
+            for model_id, model in (provider.get('models') or {}).items():
+                full_id = f'{provider_id}/{model_id}'
+                variants_by_id[full_id] = list((model.get('variants') or {}).keys())
+                cost = model.get('cost') or {}
+                if cost.get('input', 1) == 0 and cost.get('output', 1) == 0:
+                    free_ids.add(full_id)
+    except Exception:
+        pass
+    curated = sorted(CURATED_MODELS, key=lambda entry: entry['rank'])
+    if free_ids is not None:
+        curated = [item for item in curated if item['id'] in free_ids]
+    models = [{**item, 'variants': variants_by_id.get(item['id'], [])} for item in curated]
+    return jsonify({'models': models})
+
+
 @app.get('/jobs')
 def index():
     if _codex_update_enabled():
@@ -2107,6 +2167,14 @@ def generate_all_in_one_prompt():
 
 
 if __name__ == "__main__":
-    port = find_available_port()
-    print(f"Starting on http://127.0.0.1:{port}")
-    app.run(host="127.0.0.1", port=port, debug=False)
+    raw_port = os.getenv("APP_PORT", "").strip()
+    try:
+        start_port = int(raw_port) if raw_port else 3060
+        if not (1 <= start_port <= 65535):
+            raise ValueError
+    except ValueError:
+        start_port = 3060
+    port = find_available_port(start_port=start_port)
+    host = os.getenv("APP_HOST", "127.0.0.1")
+    print(f"Starting on http://{host}:{port}")
+    app.run(host=host, port=port, debug=False)

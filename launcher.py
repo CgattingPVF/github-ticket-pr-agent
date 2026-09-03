@@ -33,10 +33,23 @@ def open_browser_when_ready(url: str) -> None:
 
 
 def main() -> None:
-    port = find_available_port()
+    # Respect APP_PORT / APP_HOST for direct launcher.sh usage while keeping
+    # the PyInstaller bundled behaviour (auto-detect free port from 3060).
+    raw_port = os.getenv("APP_PORT", "").strip()
+    try:
+        start_port = int(raw_port) if raw_port else 3060
+        if not (1 <= start_port <= 65535):
+            raise ValueError
+    except ValueError:
+        start_port = 3060
+    # If caller forced a port via --port, prefer it; otherwise auto-detect
+    # from start_port upward so --port 3061 actually binds 3061 when free.
+    port = find_available_port(start_port=start_port)
     url = build_app_url(port)
-    open_browser_when_ready(url)
-    app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
+    # launcher.sh sets MERGEQUEST_NO_BROWSER=1 to suppress the popup in CI/headless
+    if os.getenv("MERGEQUEST_NO_BROWSER", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        open_browser_when_ready(url)
+    app.run(host=os.getenv("APP_HOST", "127.0.0.1"), port=port, debug=False, use_reloader=False)
 
 
 if __name__ == "__main__":

@@ -162,8 +162,8 @@
 
       <details class="advanced-details"><summary>{{ theme_dialect.advanced }}</summary><div class="advanced">
         <label>Human gate<select name="approval_mode"><option value="auto">Agent-authorized stages</option><option value="each_stage">Authorize every operation stage</option></select></label>
-        <label>{{ theme_settings.primary }}<select name="agent_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="custom">Custom {{ theme_dialect.agent }}</option></select></label>
-        <label>{{ theme_settings.reviewer }}<select name="review_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="custom">Custom {{ theme_dialect.agent }}</option></select></label>
+        <label>{{ theme_settings.primary }}<select name="agent_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="opencode">OpenCode</option><option value="custom">Custom {{ theme_dialect.agent }}</option></select></label>
+        <label>{{ theme_settings.reviewer }}<select name="review_provider"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="opencode">OpenCode</option><option value="custom">Custom {{ theme_dialect.agent }}</option></select></label>
         <small>Prompts are compressed to ~1k tokens to reduce usage while preserving task requirements and latest evidence.</small>
         <label>Implementation executable<input name="agent_command" value="{{ form.agent_command if form else defaults.agent_command }}" placeholder="Custom {{ theme_dialect.agent }} command"></label>
         <label>Reviewer executable<input name="review_command" value="{{ form.review_command if form else defaults.review_command }}" placeholder="Custom {{ theme_dialect.agent }} command"></label>
@@ -172,6 +172,7 @@
       </div></details>
 
       <div class="launch-row">
+        <button class="btn-launch btn-launch-openai" type="button" onclick="openOpenCodePicker(this.form)" title="Choose a free OpenCode model and reasoning level."><span><small>OPENCODE // FREE</small>Run OpenCode <em>Select model and thinking level</em></span><b>›</b></button>
         <button class="btn-launch btn-launch-openai btn-launch-instant" type="button" onclick="launchInstant(this.form)" title="Start on Luna and escalate up the remaining pipeline if the evidence gate fails."><span><small>OPENAI // FAST START</small>Run Fast OpenAI {{ theme_dialect.agent }}<em>Luna -> Opus -> Sol Low -> Sol High</em></span><b>›</b></button>
         <button class="btn-launch btn-launch-anthropic btn-launch-anthropic-haiku" type="button" onclick="launchClaude(this.form, 'claude-haiku-4-5')" title="Start Claude-native on Haiku and climb the single pipeline."><span><small>ANTHROPIC // BALANCED</small>Run Claude Ladder {{ theme_dialect.agent }}<em>Haiku -> Sonnet -> Luna -> Opus -> Sol Low -> Sol High</em></span><b>›</b></button>
         <button class="btn-launch btn-launch-openai" type="button" onclick="launchHigh(this.form)" title="Skip escalation and start with the highest configured OpenAI delivery model."><span><small>OPENAI // MAXIMUM</small>{{ theme_dialect.full_action }}<em>gpt-5.6-sol · reasoning low</em></span><b>›</b></button>
@@ -179,6 +180,19 @@
       <p class="safety">HUMAN-IN-THE-LOOP AUTHORIZATION // no change merges without your approval</p>
     </div>
   </form>
+  <dialog id="opencode-picker" class="opencode-modal" aria-labelledby="opencode-picker-title">
+    <form method="dialog" class="opencode-modal-card">
+      <header class="opencode-modal-header">
+        <div><p class="eyebrow">OPENCODE // MODEL MATRIX</p><h2 id="opencode-picker-title">Choose a free model</h2></div>
+        <button class="modal-close" value="cancel" aria-label="Close">×</button>
+      </header>
+      <p class="opencode-modal-intro">The list refreshes from the live catalog. Search by provider or model name; paid models are excluded.</p>
+      <label class="opencode-field">Search models<input id="opencode-search" type="search" autocomplete="off" placeholder="Filter free models…" oninput="filterOpenCodeModels(this.value)"></label>
+      <label class="opencode-field">Model<select id="opencode-model" size="6" onchange="updateOpenCodeVariants()"></select><small id="opencode-model-status">Loading current free models…</small></label>
+      <label class="opencode-field">Thinking / variant<select id="opencode-thinking"></select><small>Options come from the selected model. “Default” uses the provider default.<</small>/small></label>
+      <footer class="opencode-modal-actions"><button class="btn" value="cancel">Cancel</button><button class="btn btn-primary" type="button" onclick="launchOpenCodeFromPicker()">Run selected model <b>›<</b>/b></button></footer>
+    </form>
+  </dialog>
 </div>
 
 <section class="campaign">
@@ -399,6 +413,58 @@ function launchInstant(form) {
 function withClaudeModel(command, model) {
   const modelFlag = /--model\s+(?:"[^"]*"|'[^']*'|\S+)/;
   return modelFlag.test(command) ? command.replace(modelFlag, `--model ${model}`) : `${command} --model ${model}`;
+}
+function withOpenCodeModel(command, model, thinking) {
+  let out = command.replace(/--model\s+(?:"[^"]*"|'[^']*'|\S+)/, `--model ${model}`);
+  if (out === command) out += ` --model ${model}`;
+  out = out.replace(/--variant\s+\S+/, `--variant ${thinking}`);
+  if (!out.includes(`--variant ${thinking}`)) out += ` --variant ${thinking}`;
+  return out;
+}
+let openCodeForm;
+let openCodeModels = [];
+async function openOpenCodePicker(form) {
+  openCodeForm = form;
+  const dialog = document.getElementById('opencode-picker');
+  const models = document.getElementById('opencode-model');
+  models.innerHTML = '<option>Loading free models…</option>';
+  dialog.showModal();
+  try {
+    const response = await fetch('{{ url_for("opencode_models") }}');
+    const data = await response.json();
+    openCodeModels = data.models || [];
+    filterOpenCodeModels('');
+  } catch (_) { models.innerHTML = '<option>Unable to load models</option>'; document.getElementById('opencode-model-status').textContent = 'Catalog refresh failed. Try again later.'; }
+}
+function filterOpenCodeModels(query) {
+  const needle = query.trim().toLowerCase();
+  const visible = openCodeModels.filter(item => `${item.name} ${item.id}`.toLowerCase().includes(needle));
+  const models = document.getElementById('opencode-model');
+  models.innerHTML = visible.map(item => {
+    const ctx = item.context ? `${Math.round(item.context / 1000)}k ctx` : '';
+    const swe = item.swe_score ? `SWE ${item.swe_score}%` : '';
+    const meta = [ctx, swe].filter(Boolean).join(' · ');
+    const rank = item.rank ? `#${item.rank} ` : '';
+    return `<option value="${item.id}" data-variants='${JSON.stringify(item.variants)}'>${rank}${item.name} · ${item.id}${meta ? ` (${meta})` : ''}</option>`;
+  }).join('') || '<option disabled>No free models match</option>';
+  document.getElementById('opencode-model-status').textContent = `${visible.length} free model${visible.length === 1 ? '' : 's'} available`;
+  models.selectedIndex = visible.length ? 0 : -1;
+  updateOpenCodeVariants();
+}
+function updateOpenCodeVariants() {
+  const option = document.getElementById('opencode-model').selectedOptions[0];
+  const variants = JSON.parse(option?.dataset.variants || '[]');
+  const select = document.getElementById('opencode-thinking');
+  select.innerHTML = variants.length ? variants.map(value => `<option value="${value}">${value}</option>`).join('') : '<option value="">Default</option>';
+}
+function launchOpenCodeFromPicker() {
+  const model = document.getElementById('opencode-model').value;
+  const thinking = document.getElementById('opencode-thinking').value;
+  if (!model || !openCodeForm) return;
+  const command = withOpenCodeModel({{ defaults.opencode_command|tojson }}, model, thinking);
+  openCodeForm.agent_provider.value = 'opencode'; openCodeForm.review_provider.value = 'opencode';
+  openCodeForm.agent_command.value = command; openCodeForm.review_command.value = command;
+  document.getElementById('opencode-picker').close(); openCodeForm.requestSubmit();
 }
 function launchClaude(form, model) {
   form.agent_provider.value = 'custom';

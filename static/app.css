@@ -163,6 +163,19 @@ legend { font-weight: 600; font-size: 13px; padding: 0; margin-bottom: 4px; }
 .btn-danger-outline:hover { background: var(--red-emphasis); border-color: var(--red-emphasis); color: #fff; }
 .btn-small { padding: 4px 10px; font-size: 12px; }
 .launch-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.opencode-modal { width: min(920px, calc(100% - 28px)); max-height: calc(100% - 40px); padding: 0; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--panel); color: var(--text); box-shadow: 0 24px 80px rgba(0,0,0,.55); }
+.opencode-modal::backdrop { background: rgba(0,0,0,.72); backdrop-filter: blur(4px); }
+.opencode-modal-card { display: grid; gap: 16px; padding: 22px; max-height: calc(100vh - 40px); overflow-y: auto; }
+.opencode-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding-bottom: 14px; }
+.opencode-modal-header h2 { margin: 3px 0 0; font-size: 22px; }
+.opencode-modal-intro { margin: -4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.opencode-field { gap: 7px; }
+.opencode-field select[size] { min-height: 420px; padding: 4px; font-size: 14px; }
+.opencode-field option { padding: 8px 10px; }
+.modal-close { border: 0; background: transparent; color: var(--muted); font-size: 25px; cursor: pointer; line-height: 1; }
+.modal-close:hover { color: var(--text); }
+.opencode-modal-actions { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
+@media (max-width: 560px) { .opencode-modal-card { padding: 16px; } .opencode-modal-actions { flex-direction: column-reverse; } .opencode-modal-actions .btn { width: 100%; } }
 .btn-launch { position: relative; width: 100%; min-height: 60px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); padding: 10px 16px; color: var(--text); font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 14px; transition: background .12s, border-color .12s; }
 .btn-launch span { display: grid; gap: 2px; text-align: left; }
 .btn-launch small { font-size: 10px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }
