@@ -2333,6 +2333,10 @@ class WorkflowRunner:
         duration_seconds: int,
     ) -> str:
         def bullets(values, fallback: str) -> str:
+            # Model output may provide one item as a string instead of a list;
+            # normalize it before iterating so it does not become character bullets.
+            if isinstance(values, str):
+                values = [values]
             items = [str(value).strip() for value in (values or []) if str(value).strip()]
             return "\n".join(f"* {item}" for item in items) if items else f"* {fallback}"
 

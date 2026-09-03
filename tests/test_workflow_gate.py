@@ -441,6 +441,23 @@ def test_ticket_pr_comment_uses_full_template_and_runtime_values():
     assert "Create the widget twice." in comment
 
 
+def test_ticket_pr_comment_treats_scalar_evidence_as_one_bullet():
+    result = {
+        **_result(0.82),
+        "summary": "remember the download directory",
+        "root_cause": "the dialog always used Downloads",
+        "evidence": "git diff shows 3 new helper functions",
+        "files_changed": ["src-tauri/src/api/file/mod.rs"],
+    }
+    comment = WorkflowRunner._build_ticket_pr_comment(
+        result, {"findings": []}, 1582, "develop", "feature/1582-download-path",
+        {}, None, 0,
+    )
+
+    assert "* git diff shows 3 new helper functions" in comment
+    assert "* g\n* i\n* t" not in comment
+
+
 def test_review_runs_in_disposable_checkout_and_cannot_change_original_source(monkeypatch, tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
