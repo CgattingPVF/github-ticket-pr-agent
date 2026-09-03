@@ -366,7 +366,9 @@ class WorkflowRunner:
         if provider == "codex":
             return self.settings.agent_command if role == "agent" else self.settings.review_command
         if provider == "opencode":
-            return self.settings.opencode_command
+            # The model picker submits the selected command as a custom value;
+            # use it instead of replacing it with the default big-pickle command.
+            return (custom or self.settings.opencode_command).strip()
         return (custom or "").strip()
 
     def _load_testing_result(self, job_id: str, result_path: Path, log) -> dict:

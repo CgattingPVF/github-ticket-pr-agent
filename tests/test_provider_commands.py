@@ -12,6 +12,7 @@ class Settings:
     claude_command = "claude -p"
     agent_command = "codex exec -"
     review_command = "codex review -"
+    opencode_command = "opencode run --model opencode/big-pickle"
 
 
 def test_provider_commands_support_codex_claude_and_custom():
@@ -20,6 +21,14 @@ def test_provider_commands_support_codex_claude_and_custom():
     assert runner._provider_command("codex", "ignored", "agent") == "codex exec -"
     assert runner._provider_command("codex", "ignored", "review") == "codex review -"
     assert runner._provider_command("custom", "my-agent -p", "agent") == "my-agent -p"
+
+
+def test_opencode_provider_uses_selected_command_instead_of_default_model():
+    runner = WorkflowRunner(Settings(), object())
+    selected = "opencode run --model kenari/gpt-5-6-luna --variant high"
+
+    assert runner._provider_command("opencode", selected, "agent") == selected
+    assert runner._provider_command("opencode", "", "agent") == Settings.opencode_command
 
 
 def test_zero_timeout_allows_command_to_finish(tmp_path):
