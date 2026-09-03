@@ -767,6 +767,25 @@ class GitHubOps:
                 paths.append(path)
         return paths, additions, deletions
 
+    def add_label(self, ref: IssueRef, label: str, *, color: str = "d4c5f9", description: str = "") -> None:
+        """Attach `label` to the ticket, creating it on the repo first if needed.
+
+        `gh issue edit --add-label` fails outright if the label doesn't exist
+        yet on the repo, so create-if-missing here rather than requiring every
+        target repo to pre-provision labels the workflow wants to use.
+        """
+        run_command(
+            ["gh", "label", "create", label, "--repo", ref.full_name, "--color", color, "--description", description, "--force"],
+            timeout=self.timeout,
+            log=self.log,
+            check=False,
+        )
+        run_command(
+            ["gh", "issue", "edit", str(ref.number), "--repo", ref.full_name, "--add-label", label],
+            timeout=self.timeout,
+            log=self.log,
+        )
+
     def comment_on_issue(self, ref: IssueRef, body: str, artifact_dir: Path) -> None:
         body_file = artifact_dir / "issue-comment.md"
         body_file.write_text(body, encoding="utf-8")

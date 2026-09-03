@@ -787,19 +787,39 @@ class WorkflowRunner:
             # generated only through the explicit Recon Protocol action.
             test_plan = self._get_cached_test_plan(issue_ref)
 
+            # Client and backend live in separate repos (crm-staff-desktop /
+            # crm-api). A client ticket that actually needs a new column or
+            # GraphQL field used to dead-end: the agent could only see
+            # crm-staff-desktop, so it had no way to add the field it needed
+            # and the ticket failed waiting on a human to patch crm-api by
+            # hand. Always pair the sibling repo in so the agent can make the
+            # schema/resolver change itself in the same run — it simply won't
+            # touch it if the ticket turns out to be client-only.
             repo_dirs: dict[str, Path] = {issue_ref.repo: repo_dir}
-            if self.settings.local_repo_path and issue_ref.repo in {"crm-staff-desktop", "crm-api"}:
-                for paired_name in ("crm-staff-desktop", "crm-api"):
+            if issue_ref.repo in {"crm-staff-desktop", "crm-api"}:
+                paired_name = "crm-api" if issue_ref.repo == "crm-staff-desktop" else "crm-staff-desktop"
+                if self.settings.local_repo_path:
                     paired_dir = workspace_dir / paired_name
                     if not (paired_dir / ".git").exists():
                         raise WorkflowError(f"Paired CRM repository was not found at {paired_dir}.")
-                    repo_dirs[paired_name] = paired_dir
+                else:
+                    # Mirror the resume-flow convention (see the "changed_repos"
+                    # rebuild above): the ticket's own repo lives at
+                    # artifact_dir/"repo"; every other repo gets its own
+                    # artifact_dir/<name>/repo so nothing collides.
+                    paired_dir = artifact_dir / paired_name / "repo"
+                repo_dirs[paired_name] = paired_dir
 
             with self._timed_stage(job_id, "Cloning and preparing repositories"):
                 if not self.settings.local_repo_path:
-                    self.approve_stage(job_id, "Cloning repository")
-                    self.stage(job_id, "Cloning repository")
-                    github.clone(issue_ref, repo_dir)
+                    for repo_name, current_repo_dir in repo_dirs.items():
+                        if (current_repo_dir / ".git").exists():
+                            continue
+                        clone_stage = f"Cloning repository ({repo_name})" if len(repo_dirs) > 1 else "Cloning repository"
+                        self.approve_stage(job_id, clone_stage)
+                        self.stage(job_id, clone_stage)
+                        repo_ref = type(issue_ref)(owner=issue_ref.owner, repo=repo_name, number=issue_ref.number)
+                        github.clone(repo_ref, current_repo_dir)
                 resumable_repositories: set[str] = set()
                 if not is_qa_fix:
                     resumable_repositories, conflicting_repositories = self._classify_dirty_repositories(
@@ -1441,12 +1461,28 @@ class WorkflowRunner:
             artifact_dir.mkdir(parents=True, exist_ok=True)
             github = GitHubOps(self.settings.command_timeout_seconds, log)
             failed_stage = (job or {}).get("stage") or "Unknown stage"
+            category, _ = self._classify_failure(str(exc), result, review)
             github.comment_on_issue(
                 issue_ref,
                 self._failure_comment(failed_stage, str(exc), result, review),
                 artifact_dir,
             )
             log("Posted failure guidance on the original ticket.")
+            if category == "Missing schema or migration":
+                # This is not "the ticket failed" in the usual sense — the client
+                # fix is correct and waiting on someone else (DBA/API owner) to
+                # apply the attached migration. Label it distinctly so it isn't
+                # triaged the same way as a genuine agent/review failure.
+                try:
+                    github.add_label(
+                        issue_ref,
+                        "Awaiting Database Changes",
+                        color="d4c5f9",
+                        description="Blocked on a backend schema/migration change; SQL attached in comments.",
+                    )
+                    log("Labeled ticket 'Awaiting Database Changes'.")
+                except Exception as label_exc:  # noqa: BLE001 - labeling is best-effort
+                    log(f"Could not label ticket 'Awaiting Database Changes': {label_exc}")
         except Exception as comment_exc:  # noqa: BLE001 - best-effort notification
             log(f"Could not post failure guidance on the ticket: {comment_exc}")
 
@@ -1517,6 +1553,46 @@ class WorkflowRunner:
     def _dict_items(items) -> list[dict]:
         """Keep agent-provided arrays safe when a CLI returns scalar items."""
         return [item for item in (items or []) if isinstance(item, dict)]
+
+    @staticmethod
+    def _suggest_schema_migration(result: dict, review: dict) -> str | None:
+        """Best-effort SQL skeleton for 'missing schema/migration' failures.
+
+        This class of failure has recurred across tickets: the client-side fix
+        is correct but a backend column/GraphQL field doesn't exist yet, and
+        without this the ticket only got a prose diagnosis with nothing the
+        API owner could act on directly. Pull the `xRequired`-style boolean
+        field name(s) the agent/reviewer already identified out of their text
+        and emit a starter ALTER TABLE, so every such ticket carries something
+        attachable instead of relying on a human to redo this by hand.
+        """
+        text_parts = [
+            str(result.get("root_cause", "")),
+            *[str(item) for item in (result.get("unresolved_risks") or [])],
+            *[str(item) for item in (result.get("completion_requirements") or [])],
+            *[str(finding.get("body", "")) for finding in WorkflowRunner._dict_items(review.get("findings"))],
+        ]
+        combined = "\n".join(text_parts)
+        fields = sorted(set(re.findall(r"\b([a-z][a-zA-Z0-9]*Required)\b", combined)))
+        if not fields:
+            return None
+        lines = [
+            "### Suggested migration (best-effort — verify table/column names before applying)",
+            "This failure is a missing backend schema/field. Based on sibling boolean fields "
+            "already in this codebase, the likely fix is:",
+            "",
+            "```sql",
+        ]
+        lines.extend(
+            f'ALTER TABLE "Project" ADD COLUMN "{field}" BOOLEAN NOT NULL DEFAULT false;'
+            for field in fields
+        )
+        lines.append("```")
+        lines.append(
+            "Adjust the table name/quoting to match this backend's conventions, and add the matching "
+            "field to the GraphQL input/output types before re-running this ticket."
+        )
+        return "\n".join(lines)
 
     def _destructive_test_verification(
         self, repos: list[Path], prepared_prs: dict[str, dict],
@@ -1663,6 +1739,11 @@ class WorkflowRunner:
             sections.append("**Files touched before the run stopped:**\n" + "\n".join(f"- `{item}`" for item in files))
 
         sections.append("### Required to complete this ticket\n" + checklist)
+
+        if category == "Missing schema or migration":
+            migration_note = WorkflowRunner._suggest_schema_migration(result, review)
+            if migration_note:
+                sections.append(migration_note)
 
         tests = WorkflowRunner._dict_items(result.get("tests_run"))
         if tests:
