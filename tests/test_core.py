@@ -190,7 +190,7 @@ def test_review_prompt_receives_ticket_and_implementation_context():
     assert "Expected: login succeeds" in prompt
     assert "Callback state was discarded" in prompt
     assert '"files_changed":[' in prompt
-    assert "Start with `git diff --stat` and `git diff`" in prompt
+    assert "Start with `git status --short`, `git diff --stat`, and `git diff`" in prompt
     assert "coordinated pull requests in multiple repositories" in prompt
     assert "Do not report a required sibling change as missing" in prompt
 

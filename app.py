@@ -1475,31 +1475,85 @@ CURATED_MODELS = [
 ]
 
 
+def _parse_opencode_models_verbose(output: str) -> dict[str, dict]:
+    """Parse `opencode models <provider> --verbose` output into id -> metadata.
+
+    Each entry is a bare "provider/model-id" line followed by a JSON object
+    describing that model (cost, context limits, variants). Brace-count the
+    JSON block rather than assuming one-line-per-field formatting.
+    """
+    entries: dict[str, dict] = {}
+    lines = output.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        if '/' not in line or line.startswith('{') or line.startswith('}'):
+            index += 1
+            continue
+        model_id = line
+        index += 1
+        json_lines = []
+        depth = 0
+        started = False
+        while index < len(lines):
+            json_lines.append(lines[index])
+            depth += lines[index].count('{') - lines[index].count('}')
+            started = started or '{' in lines[index]
+            index += 1
+            if started and depth <= 0:
+                break
+        try:
+            entries[model_id] = json.loads('\n'.join(json_lines))
+        except json.JSONDecodeError:
+            continue
+    return entries
+
+
 @app.get('/api/opencode/models')
 def opencode_models():
-    """Return the curated shortlist of free OpenCode models, enriched with live
-    thinking/variant options from models.dev, dropping any entry that models.dev no
-    longer lists as free (or no longer lists at all)."""
-    variants_by_id = {}
-    free_ids = None
+    """Return the free models reported by the local OpenCode CLI.
+
+    OpenCode owns the provider model cache, so querying it is more reliable than
+    maintaining a second catalogue (or depending on the external models.dev API).
+    Keep the curated catalogue as an offline fallback for installations without
+    the CLI or when its refresh fails.
+    """
+    models = []
     try:
-        req = urllib.request.Request('https://models.dev/api.json', headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=8) as response:
-            catalog = json.load(response)
-        free_ids = set()
-        for provider_id, provider in catalog.items():
-            for model_id, model in (provider.get('models') or {}).items():
-                full_id = f'{provider_id}/{model_id}'
-                variants_by_id[full_id] = list((model.get('variants') or {}).keys())
-                cost = model.get('cost') or {}
-                if cost.get('input', 1) == 0 and cost.get('output', 1) == 0:
-                    free_ids.add(full_id)
-    except Exception:
+        completed = subprocess.run(
+            ['opencode', 'models', 'opencode', '--verbose', '--refresh'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if completed.returncode == 0:
+            entries = _parse_opencode_models_verbose(completed.stdout)
+            free_ids = sorted(
+                model_id for model_id, data in entries.items()
+                if (data.get('cost') or {}).get('input', 1) == 0
+                and (data.get('cost') or {}).get('output', 1) == 0
+            )
+            models = [
+                {
+                    'rank': rank,
+                    'id': model_id,
+                    'name': entries[model_id].get('name') or model_id.rsplit('/', 1)[-1].replace('-', ' ').title(),
+                    'context': (entries[model_id].get('limit') or {}).get('context'),
+                    'swe_score': None,
+                    'notes': 'Free model reported by OpenCode',
+                    'variants': list((entries[model_id].get('variants') or {}).keys()),
+                }
+                for rank, model_id in enumerate(free_ids, 1)
+            ]
+    except (OSError, subprocess.SubprocessError):
         pass
-    curated = sorted(CURATED_MODELS, key=lambda entry: entry['rank'])
-    if free_ids is not None:
-        curated = [item for item in curated if item['id'] in free_ids]
-    models = [{**item, 'variants': variants_by_id.get(item['id'], [])} for item in curated]
+    if not models:
+        models = [
+            {**item, 'variants': []}
+            for item in sorted(CURATED_MODELS, key=lambda entry: entry['rank'])
+        ]
     return jsonify({'models': models})
 
 
@@ -1558,7 +1612,7 @@ def clear_queue():
 @app.post('/settings/demo-notification')
 def demo_notification():
     """Trigger the same local notification used for completed pull requests."""
-    if os.name != 'nt' and not shutil.which('powershell.exe'):
+    if not shutil.which('powershell.exe') and not shutil.which('notify-send'):
         return redirect(url_for('settings_page', notification='unavailable'))
     sent = []
     demo_ticket_url = 'https://github.com/pvfscaffolding/crm-staff-desktop/issues/898'
@@ -1568,7 +1622,7 @@ def demo_notification():
         sent.append,
         launch_url=demo_ticket_url,
     )
-    if sent and sent[0].startswith('Windows notification sent'):
+    if sent and sent[0].endswith('notification sent.'):
         return redirect(url_for('settings_page', notification='sent'))
     return redirect(url_for('settings_page', notification='failed'))
 
