@@ -380,6 +380,30 @@ def test_finish_pr_refuses_to_push_below_confidence_threshold(tmp_path):
         assert "Model escalation must complete first" in str(exc)
 
 
+def test_linux_notification_uses_notify_send(monkeypatch):
+    sent = []
+
+    def fake_run(*args, **kwargs):
+        sent.append(args[0])
+        return subprocess.CompletedProcess(args[0], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(workflow.os, "name", "posix")
+    monkeypatch.setattr(workflow.shutil, "which", lambda name: "/usr/bin/notify-send" if name == "notify-send" else None)
+    monkeypatch.setattr(workflow.subprocess, "run", fake_run)
+    logs = []
+
+    WorkflowRunner._send_windows_notification(
+        "MergeQuest: PR created #42", "Fixed widgets", logs.append,
+        launch_url="https://github.com/acme/widgets/issues/42",
+    )
+
+    assert sent == [[
+        "/usr/bin/notify-send", "--app-name=MergeQuest", "MergeQuest: PR created #42",
+        "Fixed widgets\nhttps://github.com/acme/widgets/issues/42",
+    ]]
+    assert logs == ["Linux notification sent."]
+
+
 def test_pr_notification_uses_windows_notification(monkeypatch):
     sent = []
 

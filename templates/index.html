@@ -418,8 +418,10 @@ function withClaudeModel(command, model) {
 function withOpenCodeModel(command, model, thinking) {
   let out = command.replace(/--model\s+(?:"[^"]*"|'[^']*'|\S+)/, `--model ${model}`);
   if (out === command) out += ` --model ${model}`;
-  out = out.replace(/--variant\s+\S+/, `--variant ${thinking}`);
-  if (!out.includes(`--variant ${thinking}`)) out += ` --variant ${thinking}`;
+  // Models without variants use the provider default; never emit a bare
+  // --variant flag because OpenCode treats it as an invalid command.
+  out = out.replace(/\s+--variant(?:\s+\S+)?/g, '');
+  if (thinking) out += ` --variant ${thinking}`;
   return out;
 }
 let openCodeForm;

@@ -1370,16 +1370,29 @@ class WorkflowRunner:
 
     @staticmethod
     def _send_windows_notification(title: str, body: str, log, launch_url: str | None = None) -> None:
-        """Show a best-effort local Windows toast notification; no-op on other platforms.
-
-        Uses the WinRT toast API directly rather than msg.exe: msg.exe depends on the
-        Remote Desktop "TermService", which is stopped/manual on most desktop installs,
-        so it reports success while showing nothing.
-        """
-        if os.name != "nt" and not shutil.which("powershell.exe"):
-            log("Windows notification skipped: this host is not Windows.")
-            return
+        """Show a best-effort desktop notification on Windows or Linux."""
         try:
+            if os.name != "nt" and not shutil.which("powershell.exe"):
+                notify_send = shutil.which("notify-send")
+                if not notify_send:
+                    log("Linux notification skipped: notify-send is not installed.")
+                    return
+                notification_body = body
+                if launch_url:
+                    notification_body = f"{notification_body}\n{launch_url}"
+                result = subprocess.run(
+                    [notify_send, "--app-name=MergeQuest", title, notification_body],
+                    check=False, timeout=10, capture_output=True, text=True,
+                )
+                if result.returncode != 0:
+                    raise subprocess.SubprocessError(result.stderr.strip() or f"exit code {result.returncode}")
+                log("Linux notification sent.")
+                return
+            # Windows uses the WinRT toast API rather than msg.exe: msg.exe depends
+            # on the Remote Desktop TermService, which is usually stopped.
+            if not shutil.which("powershell.exe"):
+                log("Windows notification skipped: PowerShell is not available.")
+                return
             escaped_title = title.replace("'", "''")
             escaped_body = body.replace("'", "''")
             escaped_launch_url = str(launch_url or "").replace("'", "''")
