@@ -2059,12 +2059,25 @@ class WorkflowRunner:
                 job = self.store.get(job_id)
                 if not job or job["status"] == "stopped":
                     raise
+                # Provider outages are not repairable by changing the prompt.
+                # OpenCode reports these as a generic UnknownError/server error;
+                # hand the same prompt to the configured Claude runner once
+                # instead of burning all gate attempts on the unavailable service.
+                failure_text = str(exc).lower()
+                is_opencode_outage = (
+                    "opencode" in agent_command.lower()
+                    and ("unknownerror" in failure_text or "unexpected server error" in failure_text)
+                )
+                if is_opencode_outage and self.settings.claude_command:
+                    agent_command = self.settings.claude_command
+                    attempts_on_model = 0
+                    log("OpenCode provider returned a server error; retrying with the configured Claude runner.")
+                    continue
                 # A stale Codex cache can prevent the nested provider from
                 # starting at all. Recover this provider-specific failure by
                 # handing the same prompt to the configured Claude runner.
                 # This is deliberately one-way and one-time per gate attempt;
                 # ordinary coding failures still use the normal retry path.
-                failure_text = str(exc).lower()
                 if (
                     "codex" in agent_command.lower()
                     and "models cache" in failure_text

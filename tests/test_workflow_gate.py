@@ -152,6 +152,34 @@ def test_low_confidence_retry_promotes_the_claude_model(monkeypatch, tmp_path):
     assert "--model claude-sonnet-5" in commands[5]
 
 
+def test_opencode_server_error_falls_back_without_exhausting_gate(monkeypatch, tmp_path):
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        if len(commands) == 1:
+            raise workflow.WorkflowError(
+                "Command failed with exit code 1: opencode run --model alibaba-token-plan/qwen3.7-max\n"
+                "Provider output:\nError: {\\\"name\\\": \\\"UnknownError\\\", \\\"data\\\": "
+                "{\\\"message\\\": \\\"Unexpected server error. Check server logs for details.\\\"}}"
+            )
+
+    monkeypatch.setattr(workflow, "run_configured_command", fake_run)
+    monkeypatch.setattr(workflow, "load_json", lambda path: _result(0.95))
+    runner = WorkflowRunner(FakeSettings(), FakeStore())
+
+    result = runner._run_agent_gated(
+        "job", "opencode run --model alibaba-token-plan/qwen3.7-max",
+        tmp_path, tmp_path / "result.json", {"number": 1}, "go", lambda message: None,
+    )
+
+    assert result["confidence"] == 0.95
+    assert commands == [
+        "opencode run --model alibaba-token-plan/qwen3.7-max",
+        FakeSettings.claude_command,
+    ]
+
+
 def test_agent_command_crash_escalates_model_and_retries(monkeypatch, tmp_path):
     commands = []
 
