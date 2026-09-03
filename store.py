@@ -83,6 +83,7 @@ class JobStore:
                     assignees TEXT NOT NULL DEFAULT '',
                     priority TEXT NOT NULL DEFAULT '',
                     project_status TEXT NOT NULL DEFAULT '',
+                    project_number INTEGER,
                     issue_type TEXT NOT NULL DEFAULT '',
                     created_at TEXT,
                     updated_at TEXT,
@@ -91,6 +92,14 @@ class JobStore:
                 )
                 """
             )
+            for column, definition in (("project_number", "INTEGER"), ("has_attached_pr", "INTEGER NOT NULL DEFAULT 0")):
+                try:
+                    connection.execute(f"ALTER TABLE tickets ADD COLUMN {column} {definition}")
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
+            # Older databases may already have has_attached_pr; the migration above
+            # is intentionally idempotent for both old and new schemas.
             try:
                 connection.execute("ALTER TABLE tickets ADD COLUMN has_attached_pr INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError as exc:
@@ -141,21 +150,22 @@ class JobStore:
                 connection.execute(
                     """INSERT INTO tickets
                     (key, repository, number, url, title, state, labels, assignees,
-                     priority, project_status, issue_type, created_at, updated_at, synced_at, source, has_attached_pr)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     priority, project_status, project_number, issue_type, created_at, updated_at, synced_at, source, has_attached_pr)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(key) DO UPDATE SET
                       repository=excluded.repository, number=excluded.number, url=excluded.url,
                       title=excluded.title, state=excluded.state, labels=excluded.labels,
                       assignees=excluded.assignees,
                       priority=CASE WHEN excluded.source = 'github' THEN excluded.priority WHEN excluded.priority <> '' THEN excluded.priority ELSE tickets.priority END,
                       project_status=CASE WHEN excluded.source = 'github' THEN excluded.project_status WHEN excluded.project_status <> '' THEN excluded.project_status ELSE tickets.project_status END,
+                      project_number=COALESCE(excluded.project_number, tickets.project_number),
                       issue_type=excluded.issue_type,
                       created_at=excluded.created_at, updated_at=excluded.updated_at,
                       synced_at=excluded.synced_at, source=excluded.source,
                       has_attached_pr=excluded.has_attached_pr""",
                     tuple(ticket.get(field, '') for field in (
                         'key', 'repository', 'number', 'url', 'title', 'state', 'labels',
-                        'assignees', 'priority', 'project_status', 'issue_type', 'created_at',
+                        'assignees', 'priority', 'project_status', 'project_number', 'issue_type', 'created_at',
                         'updated_at', 'synced_at', 'source', 'has_attached_pr')),
                 )
 
@@ -163,7 +173,7 @@ class JobStore:
         query = "SELECT tickets.*, ticket_tests.repro_steps AS test_repro_steps, ticket_tests.pass_steps AS test_pass_steps FROM tickets LEFT JOIN ticket_tests ON ticket_tests.key = tickets.key"
         params: list[object] = []
         if state:
-            query += " WHERE upper(state) = upper(?) AND lower(trim(project_status)) IN ('triage', 'backlog', 'awaiting design')"
+            query += " WHERE upper(state) = upper(?) AND replace(lower(trim(project_status)), '-', ' ') NOT LIKE 'in progress%' AND lower(trim(project_status)) NOT IN ('done', 'ready for build', 'closed')"
             params.append(state)
         query += " ORDER BY CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END, CASE WHEN lower(labels) LIKE '%regression%' THEN 0 WHEN lower(labels) LIKE '%bug%' THEN 1 ELSE 2 END, CASE lower(trim(project_status)) WHEN 'ready for build' THEN 0 WHEN 'in progress' THEN 1 ELSE 2 END, updated_at ASC"
         if limit is not None:

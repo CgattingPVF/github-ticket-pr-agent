@@ -57,7 +57,7 @@ class Settings:
     max_gate_attempts: int = int(os.getenv("MAX_GATE_ATTEMPTS", "15"))
     close_issue_on_merge: bool = _bool("CLOSE_ISSUE_ON_MERGE", False)
     comment_on_failure: bool = _bool("COMMENT_ON_FAILURE", False)
-    editor_command: str = os.getenv("EDITOR_COMMAND", "code --reuse-window")
+    editor_command: str = os.getenv("EDITOR_COMMAND", "zed")
     local_repo_path: Path | None = Path(os.getenv("LOCAL_REPO_PATH")).resolve() if os.getenv("LOCAL_REPO_PATH") else None
 
     @property

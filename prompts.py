@@ -241,7 +241,8 @@ IMPLEMENTATION CLAIMS (verify these; do not trust them blindly)
 {_compact_json(implementation_context)}
 
 RULES
-- Review only changed diff and directly affected definitions; no repository scan/full suite. Start with `git diff --stat` and `git diff`.
+- The process working directory is the isolated checkout of the target repository. Run every repository command there. Never `cd` to the ticket-agent/controller repository or inspect its Git history.
+- Review only changed diff and directly affected definitions; no repository scan/full suite. Start with `git status --short`, `git diff --stat`, and `git diff`. If `origin/{base_branch}` is unavailable, review the supplied working-tree diff against `HEAD`; do not leave the checkout to search another repository.
 - This can create coordinated pull requests in multiple repositories. Treat supplied `coordinated_repository_changes` as one plan. Do not report a required sibling change as missing when its manifest/diff includes it; report only absent/incompatible changes or unsafe ordering.
 - Read-only snapshot: do not edit/delete/rename/format/create source. The only write is the review result at `{output_path}`; never implement findings.
 - Check ticket fit, root cause, correctness, regression, security/auth, data integrity, concurrency, errors, compatibility, and tests. Do not approve merely because tests pass.

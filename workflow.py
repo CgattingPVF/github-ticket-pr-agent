@@ -1942,7 +1942,27 @@ class WorkflowRunner:
             if before != after:
                 log("Reviewer attempted source edits in its isolated checkout; those edits were discarded.")
 
-            review = load_json(isolated_review_path)
+            if not isolated_review_path.is_file():
+                review = {
+                    "verdict": "BLOCK",
+                    "summary": "The independent reviewer completed without producing its required result.",
+                    "findings": [{
+                        "severity": "HIGH",
+                        "title": "Independent review result was not produced",
+                        "body": (
+                            "The reviewer did not write .ticket-agent/review.json in the isolated "
+                            "target-repository checkout. Retry the review stage; no implementation "
+                            "changes were discarded."
+                        ),
+                        "path": "",
+                        "line": 1,
+                        "side": "RIGHT",
+                    }],
+                }
+                isolated_review_path.write_text(json.dumps(review), encoding="utf-8")
+                log("Reviewer output was missing; recorded a structured blocking review result.")
+            else:
+                review = load_json(isolated_review_path)
             ensure_keys(review, ["verdict", "summary", "findings"], "Review result")
             if not isinstance(review.get("findings"), list):
                 raise WorkflowError("Review findings must be a JSON array.")
@@ -1968,7 +1988,7 @@ class WorkflowRunner:
     def _open_editor(self, repo_dir: Path, log) -> None:
         command = shlex.split(self.settings.editor_command)
         if not command or shutil.which(command[0]) is None:
-            log("VS Code opener is unavailable; continuing with the automated workflow.")
+            log("Configured editor opener is unavailable; continuing with the automated workflow.")
             return
         try:
             subprocess.Popen([*command, str(repo_dir)], cwd=repo_dir)

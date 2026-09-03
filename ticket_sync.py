@@ -17,7 +17,7 @@ _REPOSITORY_PATTERN = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
 # These are the only GitHub Projects that are valid sources for tickets in the
 # application. Keep this as project numbers (not URLs) because GitHub exposes
 # the number on ProjectV2 items.
-ALLOWED_PROJECT_NUMBERS = frozenset({6, 11})
+ALLOWED_PROJECT_NUMBERS = frozenset({7, 11})
 
 
 def _text(value: object) -> str:
@@ -286,6 +286,14 @@ def sync_github(repository: str = '', state: str = 'open', limit: int = 1000, to
     # GraphQL metadata batch with a field-level error.
     items = [item for item in items if isinstance(item, dict) and 'pull_request' not in item]
     project_metadata = _project_metadata(repository, [issue['number'] for issue in items], resolved_token) if repository else {}
+    # Keep only tickets assigned to one of the application's project boards.
+    # Missing project identity is retained for compatibility with older API
+    # responses and is displayed on the default board.
+    items = [
+        issue for issue in items
+        if not project_metadata.get(issue['number'], {}).get('project_number')
+        or int(project_metadata[issue['number']]['project_number']) in ALLOWED_PROJECT_NUMBERS
+    ]
     now = datetime.now(timezone.utc).isoformat()
     tickets = []
     for issue in items:
@@ -298,7 +306,8 @@ def sync_github(repository: str = '', state: str = 'open', limit: int = 1000, to
         tickets.append({'key': f'{repo}#{issue["number"]}', 'repository': repo, 'number': issue['number'],
                         'url': issue.get('html_url', ''), 'title': issue.get('title', ''),
                         'state': issue.get('state', 'open').upper(), 'labels': labels, 'assignees': assignees,
-                        'priority': priority, 'project_status': metadata.get('project_status', ''), 'issue_type': 'Issue',
+                        'priority': priority, 'project_status': metadata.get('project_status', ''),
+                        'project_number': metadata.get('project_number', ''), 'issue_type': 'Issue',
                         'created_at': issue.get('created_at', ''), 'updated_at': issue.get('updated_at', ''),
                         'synced_at': now, 'source': 'github'})
     for ticket in tickets:

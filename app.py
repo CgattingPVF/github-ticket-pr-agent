@@ -1514,7 +1514,8 @@ def index():
     watch_ids = [item for item in request.args.get('watch', '').split(',') if item]
     watched_jobs = [store.get(job_id) for job_id in watch_ids]
     watched_jobs = [job for job in watched_jobs if job]
-    return render_template('index.html', jobs=jobs, tickets=store.list_tickets(), defaults=settings, player=current_player_stats(jobs), watched_jobs=watched_jobs)
+    tickets = store.list_tickets()
+    return render_template('index.html', jobs=jobs, tickets=tickets, project_boards=(7, 11), defaults=settings, player=current_player_stats(jobs), watched_jobs=watched_jobs)
 
 @app.get('/leaderboard')
 def leaderboard_page():
@@ -2072,6 +2073,14 @@ def sync_tickets():
     try:
         payload = request.get_json(silent=True) or {}
         requested = payload.get('repositories')
+        project_number = payload.get('project_number')
+        if project_number is not None:
+            try:
+                project_number = int(project_number)
+            except (TypeError, ValueError) as exc:
+                raise ValueError('Project board must be a number.') from exc
+            if project_number not in ALLOWED_PROJECT_NUMBERS:
+                raise ValueError('Project board is not supported.')
         if requested is not None and not isinstance(requested, list):
             raise ValueError('Repositories must be provided as a list.')
         repositories = (
