@@ -174,6 +174,7 @@
 
       <div class="launch-row">
         <button class="btn-launch btn-launch-openai" type="button" onclick="openOpenCodePicker(this.form)" title="Choose a free OpenCode model and reasoning level."><span><small>OPENCODE // FREE</small>Run OpenCode <em>Select model and thinking level</em></span><b>›</b></button>
+        <button class="btn-launch btn-launch-openai" type="button" id="superrun-btn" onclick="openOpenCodePicker(this.form, true)" title="Lock a free OpenCode model, then work every visible ticket one after another until you click Stop."><span><small>OPENCODE // SUPERRUN</small>Superrun the queue <em>Locks model, works ticket by ticket</em></span><b>›</b></button>
         <button class="btn-launch btn-launch-openai btn-launch-instant" type="button" onclick="launchInstant(this.form)" title="Start on Luna and escalate up the remaining pipeline if the evidence gate fails."><span><small>OPENAI // FAST START</small>Run Fast OpenAI {{ theme_dialect.agent }}<em>Luna -> Opus -> Sol Low -> Sol High</em></span><b>›</b></button>
         <button class="btn-launch btn-launch-anthropic btn-launch-anthropic-haiku" type="button" onclick="launchClaude(this.form, 'claude-haiku-4-5')" title="Start Claude-native on Haiku and climb the single pipeline."><span><small>ANTHROPIC // BALANCED</small>Run Claude Ladder {{ theme_dialect.agent }}<em>Haiku -> Sonnet -> Luna -> Opus -> Sol Low -> Sol High</em></span><b>›</b></button>
         <button class="btn-launch btn-launch-openai" type="button" onclick="launchHigh(this.form)" title="Skip escalation and start with the highest configured OpenAI delivery model."><span><small>OPENAI // MAXIMUM</small>{{ theme_dialect.full_action }}<em>gpt-5.6-sol · reasoning low</em></span><b>›</b></button>
@@ -192,6 +193,21 @@
       <label class="opencode-field">Model<select id="opencode-model" size="6" onchange="updateOpenCodeVariants()"></select><small id="opencode-model-status">Loading current free models…</small></label>
       <label class="opencode-field">Thinking / variant<select id="opencode-thinking"></select><small>Options come from the selected model. “Default” uses the provider default.<</small>/small></label>
       <footer class="opencode-modal-actions"><button class="btn" value="cancel">Cancel</button><button class="btn btn-primary" type="button" onclick="launchOpenCodeFromPicker()">Run selected model <b>›<</b>/b></button></footer>
+    </form>
+  </dialog>
+  <div id="superrun-bar" class="superrun-bar" hidden>
+    <div class="superrun-bar-info"><b>SUPERRUN ACTIVE</b><span id="superrun-status">Starting…</span></div>
+    <button type="button" class="btn btn-small" id="superrun-stop-btn" onclick="stopSuperrun()">Stop</button>
+  </div>
+  <dialog id="superrun-results" class="opencode-modal" aria-labelledby="superrun-results-title">
+    <form method="dialog" class="opencode-modal-card">
+      <header class="opencode-modal-header">
+        <div><p class="eyebrow">SUPERRUN // DEAD DROP</p><h2 id="superrun-results-title">Run stopped</h2></div>
+        <button class="modal-close" value="cancel" aria-label="Close">×</button>
+      </header>
+      <p class="opencode-modal-intro" id="superrun-results-summary"></p>
+      <div id="superrun-results-list" class="superrun-results-list"></div>
+      <footer class="opencode-modal-actions"><button class="btn" value="cancel">Close</button><button class="btn btn-primary" type="button" onclick="openAllSuperrunTickets()">Open all in new tabs <b>›</b></button></footer>
     </form>
   </dialog>
 </div>
@@ -426,8 +442,11 @@ function withOpenCodeModel(command, model, thinking) {
 }
 let openCodeForm;
 let openCodeModels = [];
-async function openOpenCodePicker(form) {
+let openCodeSuperrun = false;
+async function openOpenCodePicker(form, superrun) {
   openCodeForm = form;
+  openCodeSuperrun = !!superrun;
+  document.getElementById('opencode-picker-title').textContent = openCodeSuperrun ? 'Choose a free model to superrun' : 'Choose a free model';
   const dialog = document.getElementById('opencode-picker');
   const models = document.getElementById('opencode-model');
   models.innerHTML = '<option>Loading free models…</option>';
@@ -465,9 +484,99 @@ function launchOpenCodeFromPicker() {
   const thinking = document.getElementById('opencode-thinking').value;
   if (!model || !openCodeForm) return;
   const command = withOpenCodeModel({{ defaults.opencode_command|tojson }}, model, thinking);
+  document.getElementById('opencode-picker').close();
+  if (openCodeSuperrun) { startSuperrun(command); return; }
   openCodeForm.agent_provider.value = 'opencode'; openCodeForm.review_provider.value = 'opencode';
   openCodeForm.agent_command.value = command; openCodeForm.review_command.value = command;
-  document.getElementById('opencode-picker').close(); openCodeForm.requestSubmit();
+  openCodeForm.requestSubmit();
+}
+
+let superrunState = null;
+async function startSuperrun(command) {
+  const rows = [...document.querySelectorAll('.issue-row-wrap')].filter(row => !row.hidden);
+  if (!rows.length) { alert('No visible tickets to superrun.'); return; }
+  if (superrunState) { alert('A superrun is already in progress.'); return; }
+  const form = openCodeForm;
+  const baseParams = {
+    base_branch: form.base_branch.value,
+    branch_prefix: form.branch_prefix.value,
+    workflow_profile: form.workflow_profile.value,
+    comment_on_failure: form.comment_on_failure.checked ? 'on' : '',
+    model_auto_escalate: form.model_auto_escalate.value,
+    approval_mode: form.approval_mode.value,
+    validation_commands: form.validation_commands.value,
+    close_issue_on_merge: form.close_issue_on_merge.checked ? 'on' : '',
+  };
+  superrunState = {
+    stopRequested: false,
+    queue: rows.map(row => ({key: row.dataset.key, number: row.dataset.number, url: row.dataset.url, title: row.dataset.title})),
+    results: [],
+  };
+  document.getElementById('superrun-bar').hidden = false;
+  document.getElementById('superrun-stop-btn').disabled = false;
+  document.getElementById('superrun-stop-btn').textContent = 'Stop';
+  runSuperrunQueue(command, baseParams);
+}
+function stopSuperrun() {
+  if (!superrunState) return;
+  superrunState.stopRequested = true;
+  document.getElementById('superrun-stop-btn').disabled = true;
+  document.getElementById('superrun-status').textContent = 'Stopping after the current ticket…';
+}
+async function submitSuperrunJob(ticket, command, baseParams) {
+  const body = new URLSearchParams({
+    issue_url: ticket.url,
+    agent_provider: 'opencode',
+    review_provider: 'opencode',
+    agent_command: command,
+    review_command: command,
+    ...baseParams,
+  });
+  const response = await fetch({{ url_for('create_job')|tojson }}, {method: 'POST', body});
+  const match = response.url.match(/\/jobs\/([^/?#]+)/);
+  if (!match) throw new Error('Could not start a job for this ticket.');
+  return match[1];
+}
+async function pollSuperrunJob(jobId) {
+  for (;;) {
+    const job = await (await fetch(`/api/jobs/${jobId}`)).json();
+    if (['completed', 'failed', 'stopped'].includes(job.status)) return job;
+    await delay(2000);
+  }
+}
+async function runSuperrunQueue(command, baseParams) {
+  const state = superrunState;
+  const total = state.queue.length;
+  for (let index = 0; index < total; index += 1) {
+    if (state.stopRequested) break;
+    const ticket = state.queue[index];
+    document.getElementById('superrun-status').textContent = `Working #${ticket.number} (${index + 1}/${total})…`;
+    try {
+      const jobId = await submitSuperrunJob(ticket, command, baseParams);
+      const job = await pollSuperrunJob(jobId);
+      state.results.push({ticket, jobId, status: job.status, error: job.status === 'failed' ? (job.error || 'Run failed') : ''});
+    } catch (err) {
+      state.results.push({ticket, jobId: null, status: 'error', error: err.message});
+    }
+  }
+  finishSuperrun();
+}
+let lastSuperrunResults = [];
+function finishSuperrun() {
+  const state = superrunState;
+  document.getElementById('superrun-bar').hidden = true;
+  lastSuperrunResults = state.results;
+  const failures = state.results.filter(row => row.status !== 'completed');
+  document.getElementById('superrun-results-summary').textContent =
+    `${state.results.length} ticket${state.results.length === 1 ? '' : 's'} processed · ${failures.length} failure${failures.length === 1 ? '' : 's'}.`;
+  document.getElementById('superrun-results-list').innerHTML = state.results.map(row => (
+    `<div class="superrun-result-row superrun-result-${row.status === 'completed' ? 'ok' : 'fail'}"><b>#${row.ticket.number}</b><span>${escapeHtml(row.ticket.title || '')}</span><i>${escapeHtml(row.status)}${row.error ? ' — ' + escapeHtml(row.error) : ''}</i></div>`
+  )).join('') || '<em>No tickets were processed.</em>';
+  document.getElementById('superrun-results').showModal();
+  superrunState = null;
+}
+function openAllSuperrunTickets() {
+  lastSuperrunResults.forEach(row => window.open(row.ticket.url, '_blank', 'noopener'));
 }
 function launchClaude(form, model) {
   form.agent_provider.value = 'custom';

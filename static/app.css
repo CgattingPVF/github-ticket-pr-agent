@@ -176,6 +176,16 @@ legend { font-weight: 600; font-size: 13px; padding: 0; margin-bottom: 4px; }
 .modal-close:hover { color: var(--text); }
 .opencode-modal-actions { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
 @media (max-width: 560px) { .opencode-modal-card { padding: 16px; } .opencode-modal-actions { flex-direction: column-reverse; } .opencode-modal-actions .btn { width: 100%; } }
+.superrun-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 40; display: flex; align-items: center; gap: 16px; padding: 10px 18px; border: 1px solid var(--accent); border-radius: 999px; background: var(--panel); color: var(--text); box-shadow: 0 12px 34px rgba(0,0,0,.4); }
+.superrun-bar-info { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.superrun-bar-info b { color: var(--accent); letter-spacing: .04em; }
+.superrun-results-list { display: grid; gap: 8px; max-height: 320px; overflow-y: auto; }
+.superrun-result-row { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+.superrun-result-row span { color: var(--muted); }
+.superrun-result-row i { font-style: normal; grid-column: 1 / -1; font-size: 12px; }
+.superrun-result-ok i { color: #3fb950; }
+.superrun-result-fail i { color: #e5534b; }
+@media (max-width: 560px) { .superrun-bar { left: 12px; right: 12px; bottom: 12px; transform: none; flex-wrap: wrap; } }
 .btn-launch { position: relative; width: 100%; min-height: 60px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); padding: 10px 16px; color: var(--text); font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 14px; transition: background .12s, border-color .12s; }
 .btn-launch span { display: grid; gap: 2px; text-align: left; }
 .btn-launch small { font-size: 10px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }
