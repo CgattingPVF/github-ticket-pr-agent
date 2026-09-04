@@ -107,6 +107,72 @@ const jobId = root.dataset.jobId;
 let active = {{ 'true' if job.status in ['queued', 'running', 'waiting_approval'] else 'false' }};
 let priorStatus = {{ job.status|tojson }};
 
+const SUPERRUN_KEY = 'mq-superrun';
+function readSuperrunState() {
+  try { return JSON.parse(sessionStorage.getItem(SUPERRUN_KEY) || 'null'); } catch (_) { return null; }
+}
+function saveSuperrunState(state) { sessionStorage.setItem(SUPERRUN_KEY, JSON.stringify(state)); }
+function submitSuperrunTicket(ticket, state) {
+  saveSuperrunState(state);
+  const fields = {
+    issue_url: ticket.url,
+    agent_provider: 'opencode',
+    review_provider: 'opencode',
+    agent_command: state.command,
+    review_command: state.command,
+    ...state.baseParams,
+  };
+  const form = document.createElement('form');
+  form.method = 'POST'; form.action = {{ url_for('create_job')|tojson }}; form.style.display = 'none';
+  Object.entries(fields).forEach(([name, value]) => {
+    const input = document.createElement('input');
+    input.type = 'hidden'; input.name = name; input.value = value ?? '';
+    form.appendChild(input);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+function initSuperrunBar() {
+  const state = readSuperrunState();
+  if (!state || !state.active) return;
+  const ticket = state.queue[state.index];
+  const bar = document.createElement('div');
+  bar.id = 'superrun-bar';
+  bar.className = 'superrun-bar';
+  bar.innerHTML = `<div class="superrun-bar-info"><b>SUPERRUN ACTIVE</b><span id="superrun-status">Working #${ticket ? ticket.number : '?'} (${state.index + 1}/${state.queue.length})…</span></div><button type="button" class="btn btn-small" id="superrun-stop-btn">Stop</button>`;
+  document.body.appendChild(bar);
+  document.getElementById('superrun-stop-btn').addEventListener('click', () => {
+    const current = readSuperrunState();
+    if (!current) return;
+    current.stopRequested = true;
+    saveSuperrunState(current);
+    document.getElementById('superrun-stop-btn').disabled = true;
+    document.getElementById('superrun-status').textContent = 'Stopping after this ticket…';
+  });
+}
+function handleSuperrunTerminal() {
+  const state = readSuperrunState();
+  if (!state || !state.active) return;
+  if (state.results.some(row => row.jobId === jobId)) return;
+  const ticket = state.queue[state.index];
+  if (!ticket) return;
+  state.results.push({
+    ticket, jobId,
+    status: currentJob.status,
+    error: currentJob.status === 'failed' ? (currentJob.error || 'Run failed') : '',
+  });
+  const nextIndex = state.index + 1;
+  if (state.stopRequested || nextIndex >= state.queue.length) {
+    state.active = false;
+    state.finished = true;
+    saveSuperrunState(state);
+    location.href = {{ url_for('index')|tojson }};
+    return;
+  }
+  state.index = nextIndex;
+  submitSuperrunTicket(state.queue[nextIndex], state);
+}
+
 function fireConfetti() {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const canvas = document.getElementById('confetti-canvas');
@@ -791,6 +857,7 @@ async function refresh() {
     const response = await fetch(`/api/jobs/${jobId}?log_cursor=${logCursor}`, {cache: 'no-store'});
     if (!response.ok) throw new Error(`Refresh failed (${response.status})`);
     applyJob(await response.json());
+    if (!active) { handleSuperrunTerminal(); return; }
   } catch (error) {
     showError(`Could not contact the job server: ${error.message}`);
   }
@@ -803,6 +870,8 @@ document.getElementById('stop-button').hidden = !['queued', 'running', 'waiting_
 document.getElementById('close-button').hidden = ['queued', 'running', 'waiting_approval', 'closed'].includes(currentJob.status);
 document.getElementById('continue-pr-button').hidden = !(currentJob.status === 'completed' && currentJob.result && currentJob.result.pr_skipped);
 if (currentJob.status === 'completed') renderVictoryStats({{ (job.result or {})|tojson }});
+initSuperrunBar();
+if (!active) handleSuperrunTerminal();
 setTimeout(refresh, 1000);
 </script>
 {% endblock %}

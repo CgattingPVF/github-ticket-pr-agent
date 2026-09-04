@@ -195,10 +195,6 @@
       <footer class="opencode-modal-actions"><button class="btn" value="cancel">Cancel</button><button class="btn btn-primary" type="button" onclick="launchOpenCodeFromPicker()">Run selected model <b>›<</b>/b></button></footer>
     </form>
   </dialog>
-  <div id="superrun-bar" class="superrun-bar" hidden>
-    <div class="superrun-bar-info"><b>SUPERRUN ACTIVE</b><span id="superrun-status">Starting…</span></div>
-    <button type="button" class="btn btn-small" id="superrun-stop-btn" onclick="stopSuperrun()">Stop</button>
-  </div>
   <dialog id="superrun-results" class="opencode-modal" aria-labelledby="superrun-results-title">
     <form method="dialog" class="opencode-modal-card">
       <header class="opencode-modal-header">
@@ -491,11 +487,33 @@ function launchOpenCodeFromPicker() {
   openCodeForm.requestSubmit();
 }
 
-let superrunState = null;
-async function startSuperrun(command) {
+const SUPERRUN_KEY = 'mq-superrun';
+function readSuperrunState() {
+  try { return JSON.parse(sessionStorage.getItem(SUPERRUN_KEY) || 'null'); } catch (_) { return null; }
+}
+function submitSuperrunTicket(ticket, state) {
+  sessionStorage.setItem(SUPERRUN_KEY, JSON.stringify(state));
+  const fields = {
+    issue_url: ticket.url,
+    agent_provider: 'opencode',
+    review_provider: 'opencode',
+    agent_command: state.command,
+    review_command: state.command,
+    ...state.baseParams,
+  };
+  const form = document.createElement('form');
+  form.method = 'POST'; form.action = {{ url_for('create_job')|tojson }}; form.style.display = 'none';
+  Object.entries(fields).forEach(([name, value]) => {
+    const input = document.createElement('input');
+    input.type = 'hidden'; input.name = name; input.value = value ?? '';
+    form.appendChild(input);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+function startSuperrun(command) {
   const rows = [...document.querySelectorAll('.issue-row-wrap')].filter(row => !row.hidden);
   if (!rows.length) { alert('No visible tickets to superrun.'); return; }
-  if (superrunState) { alert('A superrun is already in progress.'); return; }
   const form = openCodeForm;
   const baseParams = {
     base_branch: form.base_branch.value,
@@ -507,77 +525,30 @@ async function startSuperrun(command) {
     validation_commands: form.validation_commands.value,
     close_issue_on_merge: form.close_issue_on_merge.checked ? 'on' : '',
   };
-  superrunState = {
-    stopRequested: false,
-    queue: rows.map(row => ({key: row.dataset.key, number: row.dataset.number, url: row.dataset.url, title: row.dataset.title})),
-    results: [],
-  };
-  document.getElementById('superrun-bar').hidden = false;
-  document.getElementById('superrun-stop-btn').disabled = false;
-  document.getElementById('superrun-stop-btn').textContent = 'Stop';
-  runSuperrunQueue(command, baseParams);
-}
-function stopSuperrun() {
-  if (!superrunState) return;
-  superrunState.stopRequested = true;
-  document.getElementById('superrun-stop-btn').disabled = true;
-  document.getElementById('superrun-status').textContent = 'Stopping after the current ticket…';
-}
-async function submitSuperrunJob(ticket, command, baseParams) {
-  const body = new URLSearchParams({
-    issue_url: ticket.url,
-    agent_provider: 'opencode',
-    review_provider: 'opencode',
-    agent_command: command,
-    review_command: command,
-    ...baseParams,
-  });
-  const response = await fetch({{ url_for('create_job')|tojson }}, {method: 'POST', body});
-  const match = response.url.match(/\/jobs\/([^/?#]+)/);
-  if (!match) throw new Error('Could not start a job for this ticket.');
-  return match[1];
-}
-async function pollSuperrunJob(jobId) {
-  for (;;) {
-    const job = await (await fetch(`/api/jobs/${jobId}`)).json();
-    if (['completed', 'failed', 'stopped'].includes(job.status)) return job;
-    await delay(2000);
-  }
-}
-async function runSuperrunQueue(command, baseParams) {
-  const state = superrunState;
-  const total = state.queue.length;
-  for (let index = 0; index < total; index += 1) {
-    if (state.stopRequested) break;
-    const ticket = state.queue[index];
-    document.getElementById('superrun-status').textContent = `Working #${ticket.number} (${index + 1}/${total})…`;
-    try {
-      const jobId = await submitSuperrunJob(ticket, command, baseParams);
-      const job = await pollSuperrunJob(jobId);
-      state.results.push({ticket, jobId, status: job.status, error: job.status === 'failed' ? (job.error || 'Run failed') : ''});
-    } catch (err) {
-      state.results.push({ticket, jobId: null, status: 'error', error: err.message});
-    }
-  }
-  finishSuperrun();
+  const queue = rows.map(row => ({key: row.dataset.key, number: row.dataset.number, url: row.dataset.url, title: row.dataset.title}));
+  const state = {active: true, finished: false, stopRequested: false, command, baseParams, queue, index: 0, results: []};
+  submitSuperrunTicket(queue[0], state);
 }
 let lastSuperrunResults = [];
-function finishSuperrun() {
-  const state = superrunState;
-  document.getElementById('superrun-bar').hidden = true;
-  lastSuperrunResults = state.results;
-  const failures = state.results.filter(row => row.status !== 'completed');
+function renderSuperrunResults(results) {
+  lastSuperrunResults = results;
+  const failures = results.filter(row => row.status !== 'completed');
   document.getElementById('superrun-results-summary').textContent =
-    `${state.results.length} ticket${state.results.length === 1 ? '' : 's'} processed · ${failures.length} failure${failures.length === 1 ? '' : 's'}.`;
-  document.getElementById('superrun-results-list').innerHTML = state.results.map(row => (
+    `${results.length} ticket${results.length === 1 ? '' : 's'} processed · ${failures.length} failure${failures.length === 1 ? '' : 's'}.`;
+  document.getElementById('superrun-results-list').innerHTML = results.map(row => (
     `<div class="superrun-result-row superrun-result-${row.status === 'completed' ? 'ok' : 'fail'}"><b>#${row.ticket.number}</b><span>${escapeHtml(row.ticket.title || '')}</span><i>${escapeHtml(row.status)}${row.error ? ' — ' + escapeHtml(row.error) : ''}</i></div>`
   )).join('') || '<em>No tickets were processed.</em>';
   document.getElementById('superrun-results').showModal();
-  superrunState = null;
 }
 function openAllSuperrunTickets() {
   lastSuperrunResults.forEach(row => window.open(row.ticket.url, '_blank', 'noopener'));
 }
+(function showSuperrunResultsIfFinished() {
+  const state = readSuperrunState();
+  if (!state || !state.finished) return;
+  sessionStorage.removeItem(SUPERRUN_KEY);
+  renderSuperrunResults(state.results);
+})();
 function launchClaude(form, model) {
   form.agent_provider.value = 'custom';
   form.review_provider.value = 'custom';
