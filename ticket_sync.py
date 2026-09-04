@@ -17,7 +17,10 @@ _REPOSITORY_PATTERN = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
 # These are the only GitHub Projects that are valid sources for tickets in the
 # application. Keep this as project numbers (not URLs) because GitHub exposes
 # the number on ProjectV2 items.
-ALLOWED_PROJECT_NUMBERS = frozenset({7, 11})
+ALLOWED_PROJECT_NUMBERS = frozenset({6, 11})
+# Tickets are only shown when their project board status matches one of these
+# allowed values for that board.
+ALLOWED_PROJECT_STATUSES = {11: {'Intake', 'Backlog'}, 6: {'To Triage', 'Backlog'}}
 
 
 def _text(value: object) -> str:
@@ -286,14 +289,17 @@ def sync_github(repository: str = '', state: str = 'open', limit: int = 1000, to
     # GraphQL metadata batch with a field-level error.
     items = [item for item in items if isinstance(item, dict) and 'pull_request' not in item]
     project_metadata = _project_metadata(repository, [issue['number'] for issue in items], resolved_token) if repository else {}
-    # Keep only tickets assigned to one of the application's project boards.
-    # Missing project identity is retained for compatibility with older API
-    # responses and is displayed on the default board.
-    items = [
-        issue for issue in items
-        if not project_metadata.get(issue['number'], {}).get('project_number')
-        or int(project_metadata[issue['number']]['project_number']) in ALLOWED_PROJECT_NUMBERS
-    ]
+    # Keep only tickets assigned to one of the application's project boards
+    # and whose status on that board is one of the allowed intake statuses.
+    def _visible(issue: dict) -> bool:
+        metadata = project_metadata.get(issue['number'], {})
+        project_number = metadata.get('project_number')
+        if not project_number or int(project_number) not in ALLOWED_PROJECT_NUMBERS:
+            return False
+        allowed_statuses = ALLOWED_PROJECT_STATUSES.get(int(project_number), set())
+        return metadata.get('project_status') in allowed_statuses
+
+    items = [issue for issue in items if _visible(issue)]
     now = datetime.now(timezone.utc).isoformat()
     tickets = []
     for issue in items:

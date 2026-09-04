@@ -54,7 +54,7 @@ def test_sync_excludes_pull_requests_before_loading_project_metadata(monkeypatch
         assert 'i1105: issue(number: 1105)' in query
         assert '1106' not in query
         return {'data': {'repository': {'i1105': {'projectItems': {'nodes': [
-            {'fieldValues': {'nodes': [
+            {'project': {'number': 11}, 'fieldValues': {'nodes': [
                 {'name': 'Backlog', 'field': {'name': 'Status'}},
             ]}},
         ]}}}}}

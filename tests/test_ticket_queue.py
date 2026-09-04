@@ -9,23 +9,23 @@ def test_in_progress_tickets_are_not_listed(tmp_path: Path):
         {
             "key": "org#1029", "repository": "org/repo", "number": 1029,
             "url": "https://github.com/org/repo/issues/1029", "title": "In progress",
-            "state": "OPEN", "project_status": "In Progress", "synced_at": "now",
+            "state": "OPEN", "project_status": "In Progress", "project_number": 11, "synced_at": "now",
         },
         {
             "key": "org#1030", "repository": "org/repo", "number": 1030,
             "url": "https://github.com/org/repo/issues/1030", "title": "Ready",
-            "state": "OPEN", "project_status": "Backlog", "synced_at": "now",
+            "state": "OPEN", "project_status": "Backlog", "project_number": 11, "synced_at": "now",
         },
         {
             "key": "org#1031", "repository": "org/repo", "number": 1031,
             "url": "https://github.com/org/repo/issues/1031", "title": "In review",
-            "state": "OPEN", "project_status": "In review", "synced_at": "now",
+            "state": "OPEN", "project_status": "To Triage", "project_number": 6, "synced_at": "now",
         },
     ])
     assert [ticket["number"] for ticket in store.list_tickets()] == [1030, 1031]
 
 
-def test_ticket_queue_returns_every_synced_open_ticket_by_default(tmp_path: Path):
+def test_ticket_queue_returns_only_intake_project_tickets_by_default(tmp_path: Path):
     store = JobStore(tmp_path / "jobs.sqlite3")
     eligible = [
         {
@@ -35,6 +35,8 @@ def test_ticket_queue_returns_every_synced_open_ticket_by_default(tmp_path: Path
             "url": f"https://github.com/org/repo/issues/{number}",
             "title": f"Ticket {number}",
             "state": "OPEN",
+            "project_status": "Intake" if number % 2 else "Backlog",
+            "project_number": 11,
             "synced_at": "now",
         }
         for number in range(1, 76)
@@ -48,6 +50,7 @@ def test_ticket_queue_returns_every_synced_open_ticket_by_default(tmp_path: Path
             "title": f"Active ticket {number}",
             "state": "OPEN",
             "project_status": "In Progress - Development" if number % 2 else "In-Progress",
+            "project_number": 11,
             "synced_at": "now",
         }
         for number in range(100, 116)
@@ -76,10 +79,12 @@ def test_github_resync_clears_stale_project_status(tmp_path: Path):
     ticket = {
         "key": "org/repo#1105", "repository": "org/repo", "number": 1105,
         "url": "https://github.com/org/repo/issues/1105", "title": "Moved ticket",
-        "state": "OPEN", "project_status": "In progress", "synced_at": "before",
+        "state": "OPEN", "project_status": "In progress", "project_number": 11, "synced_at": "before",
         "source": "github",
     }
     store.upsert_tickets([ticket])
-    store.upsert_tickets([{**ticket, "project_status": "", "synced_at": "after"}])
+    assert store.list_tickets() == []
+
+    store.upsert_tickets([{**ticket, "project_status": "Backlog", "synced_at": "after"}])
 
     assert store.list_tickets()[0]["number"] == 1105
