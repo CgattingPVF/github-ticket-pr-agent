@@ -1478,6 +1478,13 @@ class WorkflowRunner:
                 log("Labeled ticket 'Agent Failure Tag'.")
             except Exception as label_exc:  # noqa: BLE001 - labeling is best-effort
                 log(f"Could not label ticket 'Agent Failure Tag': {label_exc}")
+            github_login = params.get("github_login")
+            if github_login:
+                try:
+                    github.assign_issue(issue_ref, github_login)
+                    log(f"Assigned @{github_login} to the failed ticket.")
+                except Exception as assign_exc:  # noqa: BLE001 - assignment is best-effort
+                    log(f"Could not assign @{github_login} to the failed ticket: {assign_exc}")
             if category == "Missing schema or migration":
                 # This is not "the ticket failed" in the usual sense — the client
                 # fix is correct and waiting on someone else (DBA/API owner) to
