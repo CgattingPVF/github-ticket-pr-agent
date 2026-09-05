@@ -1468,6 +1468,16 @@ class WorkflowRunner:
                 artifact_dir,
             )
             log("Posted failure guidance on the original ticket.")
+            try:
+                github.add_label(
+                    issue_ref,
+                    "Agent Failure Tag",
+                    color="b60205",
+                    description="The automated agent run failed on this ticket; see the failure comment for details.",
+                )
+                log("Labeled ticket 'Agent Failure Tag'.")
+            except Exception as label_exc:  # noqa: BLE001 - labeling is best-effort
+                log(f"Could not label ticket 'Agent Failure Tag': {label_exc}")
             if category == "Missing schema or migration":
                 # This is not "the ticket failed" in the usual sense — the client
                 # fix is correct and waiting on someone else (DBA/API owner) to
